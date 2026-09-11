@@ -1,0 +1,16 @@
+{
+  "name": "hoofbeat",
+  "version": "1.0.0",
+  "description": "Entree js13kGames 2026. Ta trainee arc-en-ciel devient solide au run suivant : tu meurs pour construire le chemin.",
+  "private": true,
+  "scripts": {
+    "build": "bash build.sh index.html --strip-dev",
+    "build:final": "BEST=3 RR_ARGS='-O2 -S0,1,2,3,7,13,22,42,57' bash build.sh index.html --strip-dev",
+    "build:dev": "bash build.sh index.html",
+    "test": "bash test.sh"
+  },
+  "devDependencies": {
+    "roadroller": "^2.1.0",
+    "terser": "^5.31.0"
+  }
+}

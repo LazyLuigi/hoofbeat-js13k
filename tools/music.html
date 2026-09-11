@@ -1,0 +1,238 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HOOFBEAT - huit musiques</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;
+ background:linear-gradient(170deg,#ffd7ea,#f4d6ff 32%,#dadcff 64%,#c6f2e2);color:#5f4570;
+ -webkit-tap-highlight-color:transparent}
+.wrap{max-width:560px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:26px;font-weight:900;margin:0 0 4px;letter-spacing:.5px}
+.sub{font-size:13.5px;color:#8f7a9d;margin:0 0 20px}
+.card{background:rgba(255,255,255,.9);border:2px solid #ecdcea;border-radius:18px;
+ padding:14px 15px;margin-bottom:11px;cursor:pointer;transition:.14s;position:relative;overflow:hidden}
+.card:active{transform:scale(.985)}
+.card.on{border-color:#c9b0ea;background:#fff;box-shadow:0 8px 26px rgba(120,70,130,.2)}
+.card.on:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+ background:linear-gradient(#ff9ec7,#ffd274,#8ee2ba,#9fd8ff,#c9a6ff)}
+.row{display:flex;align-items:center;gap:11px}
+.num{font-weight:900;font-size:13px;color:#c8b6d4;min-width:20px}
+.nm{font-weight:800;font-size:17px;letter-spacing:.3px;flex:1}
+.bpm{font-size:12px;font-weight:700;color:#a992b8;background:#f6eefb;
+ padding:3px 9px;border-radius:20px;white-space:nowrap}
+.d{font-size:13px;color:#8f7a9d;margin:6px 0 0 31px}
+.eq{display:flex;gap:2.5px;align-items:flex-end;height:16px;margin-left:4px}
+.eq i{width:3px;background:#c94f92;border-radius:2px;height:4px}
+.card.on .eq i{animation:b .55s ease-in-out infinite alternate}
+.card.on .eq i:nth-child(2){animation-delay:.13s}
+.card.on .eq i:nth-child(3){animation-delay:.26s}
+.card.on .eq i:nth-child(4){animation-delay:.39s}
+@keyframes b{to{height:16px}}
+.note{font-size:12.5px;color:#9c86ab;margin-top:22px;line-height:1.6}
+.vol{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-size:13px;color:#8f7a9d}
+input[type=range]{flex:1;accent-color:#c94f92}
+</style></head><body><div class=wrap>
+<h1>Huit musiques</h1>
+<p class=sub>Touche une carte pour l'écouter, touche à nouveau pour couper. Chaque boucle fait quatre mesures.</p>
+<div class=vol><span>volume</span><input type=range id=vol min=0 max=100 value=75></div>
+<div id=list></div>
+<p class=note>Toutes utilisent la même méthode que le jeu : oscillateurs et bruit filtré, zéro fichier audio.
+Dis-moi le numéro qui te plaît et je le porte dans HOOFBEAT.</p>
+</div><script>
+"use strict";
+// ---------------------------------------------------------------- audio
+var AC, MASTER, NBUF, timer = null, cur = -1, nextT = 0, step = 0, sd = 0;
+function ctx(){
+  if(!AC){
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    MASTER = AC.createGain(); MASTER.gain.value = 0.75; MASTER.connect(AC.destination);
+    NBUF = AC.createBuffer(1, AC.sampleRate * 0.4, AC.sampleRate);
+    var d = NBUF.getChannelData(0);
+    for(var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if(AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function hz(s){ return 261.626 * Math.pow(2, s / 12); }
+function chord(r, min){ return [r, r + (min ? 3 : 4), r + 7]; }
+
+function tone(t, f, dur, type, vol, det, cut){
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.value = f; if(det) o.detune.value = det;
+  if(cut){
+    var fl = AC.createBiquadFilter();
+    fl.type = 'lowpass'; fl.frequency.value = cut; fl.Q.value = 0.7;
+    o.connect(fl); fl.connect(g);
+  } else o.connect(g);
+  g.connect(MASTER);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.start(t); o.stop(t + dur + 0.06);
+}
+function noise(t, dur, vol, freq, q){
+  var s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = NBUF;
+  f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q || 1.2;
+  s.connect(f); f.connect(g); g.connect(MASTER);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.start(t); s.stop(t + dur + 0.03);
+}
+function kick(t, vol){
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.09);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.23);
+  o.connect(g); g.connect(MASTER); o.start(t); o.stop(t + 0.26);
+}
+
+// ---------------------------------------------------------------- variantes
+// spb = subdivisions par mesure. 16 pour une mesure a quatre temps,
+// 12 pour une mesure a trois temps ou un 6/8.
+var V = [
+{ n:'SKIPPING', bpm:118, spb:16,
+  d:"Pentatonique sautillante. La plus proche de l'actuelle, en plus vif et plus rond.",
+  prog:[[0,0],[7,0],[9,1],[5,0]],
+  f:function(i, t, v){
+    var b = i % 16, c = v.prog[(i / 16 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b === 0 || b === 6 || b === 10) tone(t, hz(r - 24), 0.34, 'triangle', 0.24);
+    if(b % 4 === 2) noise(t, 0.05, 0.09, 7000, 1.4);
+    if(b === 4 || b === 12) ch.forEach(function(s){ tone(t, hz(s), 0.3, 'triangle', 0.08); });
+    if([0, 3, 6, 8, 11, 14].indexOf(b) >= 0){
+      var p = [0, 2, 4, 7, 9][(i * 7) % 5];
+      tone(t, hz(r + p + 12), 0.28, 'sine', 0.14);
+      tone(t, hz(r + p + 24), 0.2, 'sine', 0.045, 6);
+    }
+  }},
+
+{ n:'MUSIC BOX', bpm:94, spb:12,
+  d:"Boite a musique cristalline, valse a trois temps. Feerique et calme.",
+  prog:[[0,0],[5,0],[9,1],[7,0]],
+  f:function(i, t, v){
+    var b = i % 12, c = v.prog[(i / 12 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b === 0) tone(t, hz(r - 24), 0.9, 'sine', 0.17);
+    var n = ch[b % 3] + 12 + (b > 5 ? 12 : 0);   // registre de clochette, pas de sifflet
+    tone(t, hz(n), 0.95, 'sine', 0.09);
+    tone(t, hz(n + 12), 0.5, 'sine', 0.022, 7);
+    if(b === 0 || b === 6) tone(t, hz(ch[1] + 12), 0.75, 'triangle', 0.05);
+  }},
+
+{ n:'CHIPTUNE PARADE', bpm:146, spb:16,
+  d:"Fanfare 8 bits en ondes carrees, tempo de defile. La plus retro.",
+  prog:[[0,0],[0,0],[5,0],[7,0]],
+  f:function(i, t, v){
+    var b = i % 16, c = v.prog[(i / 16 | 0) % 4], r = c[0];
+    if(b % 4 === 0) tone(t, hz(r - 24), 0.17, 'square', 0.17, 0, 900);
+    if(b % 4 === 2) tone(t, hz(r - 12), 0.12, 'square', 0.10, 0, 900);
+    if(b % 2 === 1) noise(t, 0.035, 0.06, 8200, 1.2);
+    var mel = [0, 4, 7, 4, 9, 7, 12, 7];
+    if(b % 2 === 0) tone(t, hz(r + mel[b / 2 | 0] + 12), 0.15, 'square', 0.11, 0, 3200);
+  }},
+
+{ n:'BUBBLEGUM POP', bpm:126, spb:16,
+  d:"Quatre temps marques, grosse caisse et accords piques. La plus dansante.",
+  prog:[[0,0],[7,0],[9,1],[5,0]],
+  f:function(i, t, v){
+    var b = i % 16, c = v.prog[(i / 16 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b % 4 === 0){ kick(t, 0.5); tone(t, hz(r - 24), 0.22, 'triangle', 0.19); }
+    if(b === 4 || b === 12) noise(t, 0.13, 0.15, 2200, 0.8);
+    if(b % 2 === 1) noise(t, 0.03, 0.045, 9200, 1.5);
+    if(b % 4 === 2) ch.forEach(function(s){ tone(t, hz(s), 0.17, 'triangle', 0.075); });
+    var mel = [0, 0, 4, 7, 9, 7, 4, 2];
+    if(b % 2 === 0) tone(t, hz(r + mel[b / 2 | 0] + 12), 0.24, 'sine', 0.14);
+  }},
+
+{ n:'CLOUD WALTZ', bpm:104, spb:12,
+  d:"Valse lydienne : la quarte augmentee donne ce cote reveur et suspendu.",
+  prog:[[0,0],[2,0],[0,0],[7,0]],
+  f:function(i, t, v){
+    var b = i % 12, c = v.prog[(i / 12 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b === 0) tone(t, hz(r - 24), 0.55, 'triangle', 0.21);
+    if(b === 4 || b === 8) ch.forEach(function(s){ tone(t, hz(s - 12), 0.42, 'triangle', 0.07); });
+    if(b % 2 === 0) tone(t, hz(r + [0, 2, 4, 6, 7, 9, 11][(i * 3) % 7] + 12), 0.55, 'sine', 0.12, 4);
+  }},
+
+{ n:'SUNRISE MARCH', bpm:102, spb:16,
+  d:"Cuivres filtres et progression triomphante. La plus solennelle des gaies.",
+  prog:[[0,0],[7,0],[9,1],[5,0]],
+  f:function(i, t, v){
+    var b = i % 16, c = v.prog[(i / 16 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b === 0 || b === 8) kick(t, 0.4);
+    if(b % 4 === 0) tone(t, hz(r - 24), 0.3, 'triangle', 0.19);
+    if(b === 0 || b === 6 || b === 10)
+      ch.forEach(function(s, k){ tone(t, hz(s), 0.42, 'sawtooth', 0.05, k * 5, 1500); });
+    var fan = [7, 7, 9, 11, 12, 11, 9, 7];
+    if(b % 2 === 0) tone(t, hz(r + fan[b / 2 | 0]), 0.3, 'sawtooth', 0.085, 0, 2400);
+  }},
+
+{ n:'CANDY RUSH', bpm:152, spb:16,
+  d:"Doubles croches pentatoniques en continu. La plus rapide et la plus nerveuse.",
+  prog:[[0,0],[9,1],[5,0],[7,0]],
+  f:function(i, t, v){
+    var b = i % 16, c = v.prog[(i / 16 | 0) % 4], r = c[0];
+    if(b % 2 === 0) tone(t, hz(r - 24), 0.11, 'triangle', 0.18);
+    if(b % 2 === 1) noise(t, 0.028, 0.05, 9500, 1.6);
+    tone(t, hz(r + [0, 2, 4, 7, 9, 12, 9, 7, 4, 2][i % 10] + 12), 0.1, 'triangle', 0.1);
+    if(b === 0) tone(t, hz(r + 12), 0.55, 'sine', 0.06);
+  }},
+
+{ n:'CAROUSEL', bpm:112, spb:12,
+  d:"Orgue de manege en 6/8, oom-pah-pah legerement desaccorde. La plus foraine.",
+  prog:[[0,0],[7,0],[0,0],[5,0]],
+  f:function(i, t, v){
+    var b = i % 12, c = v.prog[(i / 12 | 0) % 4], r = c[0], ch = chord(r, c[1]);
+    if(b === 0 || b === 6) tone(t, hz(r - 24), 0.25, 'triangle', 0.22);
+    if(b === 2 || b === 4 || b === 8 || b === 10)
+      ch.forEach(function(s){ tone(t, hz(s - 12), 0.19, 'square', 0.045, 0, 1400); });
+    if(b % 2 === 0){
+      var n = r + [0, 4, 7, 12, 7, 4][b / 2 | 0] + 12;
+      tone(t, hz(n), 0.32, 'square', 0.065, -9, 2600);
+      tone(t, hz(n), 0.32, 'square', 0.055, 10, 2600);
+    }
+  }}
+];
+
+// ---------------------------------------------------------------- lecture
+function tick(){
+  if(!AC || cur < 0) return;
+  var ahead = AC.currentTime + 0.3;
+  while(nextT < ahead){ V[cur].f(step, nextT, V[cur]); nextT += sd; step++; }
+}
+function stop(){
+  if(timer){ clearInterval(timer); timer = null; }
+  cur = -1; paint();
+}
+function play(k){
+  ctx();
+  if(cur === k){ stop(); return; }
+  if(timer) clearInterval(timer);
+  cur = k; step = 0;
+  sd = 60 / V[k].bpm / 4;                 // une subdivision = une double croche
+  nextT = AC.currentTime + 0.08;
+  timer = setInterval(tick, 25);
+  paint();
+}
+
+// ---------------------------------------------------------------- interface
+var list = document.getElementById('list');
+V.forEach(function(v, i){
+  var el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = '<div class=row><span class=num>' + (i + 1) + '</span>' +
+    '<span class=nm>' + v.n + '</span>' +
+    '<span class=eq><i></i><i></i><i></i><i></i></span>' +
+    '<span class=bpm>' + v.bpm + ' bpm</span></div>' +
+    '<div class=d>' + v.d + '</div>';
+  el.onclick = function(){ play(i); };
+  list.appendChild(el);
+});
+function paint(){
+  [].forEach.call(list.children, function(el, i){ el.className = 'card' + (i === cur ? ' on' : ''); });
+}
+document.getElementById('vol').oninput = function(){
+  if(MASTER) MASTER.gain.value = this.value / 100;
+};
+</script></body></html>

@@ -1,0 +1,424 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HOOFBEAT - six sols</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#5f4570;
+ background:#f3e9f7;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:620px;margin:0 auto;padding:20px 14px 60px}
+h1{font-size:25px;font-weight:900;margin:0 0 4px}
+.sub{font-size:13.5px;color:#8f7a9d;margin:0 0 18px}
+.ctl{display:flex;align-items:center;gap:10px;font-size:13px;color:#8f7a9d;margin:0 0 20px}
+input[type=range]{flex:1;accent-color:#c94f92}
+.p{margin:0 0 20px;border-radius:18px;overflow:hidden;background:#fff;
+ box-shadow:0 6px 22px rgba(120,70,130,.14)}
+.hd{display:flex;align-items:center;gap:10px;padding:11px 14px 9px}
+.n{font-weight:900;font-size:12px;color:#fff;background:#c9a6e0;width:22px;height:22px;
+ border-radius:50%;display:grid;place-items:center}
+.t{font-weight:800;font-size:16px;letter-spacing:.4px}
+canvas{display:block;width:100%;height:220px}
+.d{font-size:13px;color:#8f7a9d;margin:0;padding:10px 14px 13px;border-top:1px solid #f2e8f6}
+</style></head><body><div class=wrap>
+<h1>Six sols</h1>
+<p class=sub>Même ciel, même découpe de terrain, même licorne de référence pour l'échelle.
+Chaque panneau montre une surface et une falaise, parce que c'est la coupe qui donne le poids.</p>
+<div class=ctl><span>défilement</span><input type=range id=sp min=0 max=100 value=42></div>
+<div id=list></div>
+</div><script>
+"use strict";
+// ---------------------------------------------------------------- utilitaires
+function hash(n){ var v = Math.sin(n * 127.1) * 43758.545; return v - Math.floor(v); }
+function lerp(a, b, t){ return a + (b - a) * t; }
+
+var SPAN = 940, SOLID = 640;          // un plein et un vide, pour voir la falaise
+function segments(cam, W){
+  var out = [], base = Math.floor((cam - SPAN) / SPAN) * SPAN;
+  for(var s = base; s < cam + W + SPAN; s += SPAN){
+    var a = s - cam;
+    if(a > W + 60 || a + SOLID < -60) continue;
+    out.push({ x0:a, x1:a + SOLID, id:s / SPAN });
+  }
+  return out;
+}
+function sky(X, W, H){
+  var g = X.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#ffd7ea'); g.addColorStop(0.34, '#f4d6ff');
+  g.addColorStop(0.66, '#dadcff'); g.addColorStop(1, '#c6f2e2');
+  X.fillStyle = g; X.fillRect(0, 0, W, H);
+  var sx = W * 0.8, sy = H * 0.16;
+  var s = X.createRadialGradient(sx, sy, 4, sx, sy, 120);
+  s.addColorStop(0, 'rgba(255,255,235,.9)');
+  s.addColorStop(0.2, 'rgba(255,238,190,.45)');
+  s.addColorStop(1, 'rgba(255,214,205,0)');
+  X.fillStyle = s; X.fillRect(sx - 130, sy - 130, 260, 260);
+}
+// Licorne stylisee, uniquement pour donner l'echelle. 46 px de haut.
+function pony(X, x, y, T){
+  X.save(); X.translate(x, y); X.scale(0.8, 0.8);
+  var bob = Math.sin(T * 8) * 2;
+  X.strokeStyle = '#6a4a7a'; X.lineWidth = 5; X.lineCap = 'round';
+  for(var i = 0; i < 4; i++){
+    var sw = Math.sin(T * 8 + i * 1.6) * 5;
+    X.beginPath(); X.moveTo(-8 + i * 5.5, -19 + bob); X.lineTo(-8 + i * 5.5 + sw * 0.5, -1); X.stroke();
+  }
+  X.fillStyle = '#6a4a7a';
+  X.beginPath(); X.ellipse(0, -28 + bob, 16, 12, 0, 0, 6.283); X.fill();
+  X.beginPath(); X.ellipse(13, -42 + bob, 9.5, 8, 0.4, 0, 6.283); X.fill();
+  X.fillStyle = '#fffdff';
+  X.beginPath(); X.ellipse(0, -28 + bob, 13, 9.5, 0, 0, 6.283); X.fill();
+  X.beginPath(); X.ellipse(13, -42 + bob, 7.5, 6, 0.4, 0, 6.283); X.fill();
+  for(i = 0; i < 6; i++){
+    X.strokeStyle = 'hsl(' + (i * 44 + T * 60) % 360 + ',80%,72%)'; X.lineWidth = 3.4;
+    X.beginPath(); X.moveTo(9, -48 + bob + i * 2.2);
+    X.quadraticCurveTo(0, -44 + bob + i * 2.4, -8 - i * 1.4, -38 + bob + i * 2.2); X.stroke();
+  }
+  X.fillStyle = '#ffd274';
+  X.beginPath(); X.moveTo(15, -49 + bob); X.lineTo(19, -60 + bob); X.lineTo(11, -50 + bob); X.fill();
+  X.restore();
+}
+
+// ================================================================ 1 STORYBOOK
+function storybook(X, W, H, cam, T){
+  var top = H * 0.42;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 26;
+    // corps
+    var g = X.createLinearGradient(0, gy, 0, H);
+    g.addColorStop(0, '#a9e6c8'); g.addColorStop(0.22, '#7fcaa9');
+    g.addColorStop(0.62, '#4f9c85'); g.addColorStop(1, '#33705f');
+    X.fillStyle = g;
+    X.beginPath(); X.moveTo(s.x0, H + 10);
+    for(var x = s.x0; x <= s.x1; x += 4)
+      X.lineTo(x, gy + Math.sin((x + cam) * 0.021) * 2.2 + Math.sin((x + cam) * 0.058) * 1.1);
+    X.lineTo(s.x1, H + 10); X.closePath(); X.fill();
+    // occlusion sous l herbe : c est elle qui donne l epaisseur
+    X.save(); X.clip();
+    var ao = X.createLinearGradient(0, gy, 0, gy + 30);
+    ao.addColorStop(0, 'rgba(46,86,74,.34)'); ao.addColorStop(1, 'rgba(46,86,74,0)');
+    X.fillStyle = ao; X.fillRect(s.x0, gy, s.x1 - s.x0, 34);
+    X.restore();
+    // trait d encre sur l arete
+    X.strokeStyle = '#5e4472'; X.lineWidth = 3; X.lineJoin = 'round'; X.lineCap = 'round';
+    X.beginPath();
+    for(var x2 = s.x0; x2 <= s.x1; x2 += 4){
+      var yy = gy + Math.sin((x2 + cam) * 0.021) * 2.2 + Math.sin((x2 + cam) * 0.058) * 1.1;
+      if(x2 === s.x0) X.moveTo(x2, yy); else X.lineTo(x2, yy);
+    }
+    X.stroke();
+    X.strokeStyle = '#5e4472';
+    X.beginPath(); X.moveTo(s.x0, gy); X.lineTo(s.x0, H + 10);
+    X.moveTo(s.x1, gy); X.lineTo(s.x1, H + 10); X.stroke();
+    // touffes et fleurs
+    X.save();
+    X.beginPath(); X.rect(s.x0, 0, s.x1 - s.x0, H); X.clip();
+    for(var w = Math.floor((cam + s.x0) / 15) * 15; w < cam + s.x1; w += 15){
+      var px = w - cam, q = hash(w), gyy = gy + Math.sin(w * 0.021) * 2.2;
+      X.strokeStyle = '#79d9ae'; X.lineWidth = 2.6;
+      X.beginPath(); X.moveTo(px, gyy + 1);
+      X.quadraticCurveTo(px + 2, gyy - 7 - q * 5, px + (q - 0.5) * 13, gyy - 11 - q * 7);
+      X.stroke();
+      if(q > 0.88){
+        var fx = px + (q - 0.5) * 13, fy = gyy - 15 - q * 7;
+        X.strokeStyle = '#79d9ae'; X.lineWidth = 1.8;
+        X.beginPath(); X.moveTo(px, gyy); X.lineTo(fx, fy); X.stroke();
+        X.fillStyle = q > 0.94 ? '#ffd6e8' : '#fff2b8';
+        for(var f = 0; f < 5; f++){
+          X.beginPath();
+          X.arc(fx + Math.cos(f * 1.257) * 3.4, fy + Math.sin(f * 1.257) * 3.4, 2.6, 0, 6.283); X.fill();
+        }
+        X.fillStyle = '#ffb85c'; X.beginPath(); X.arc(fx, fy, 1.8, 0, 6.283); X.fill();
+      }
+    }
+    X.restore();
+  });
+}
+
+// ================================================================ 2 STRATA
+function strata(X, W, H, cam, T){
+  var top = H * 0.42;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 26, w = s.x1 - s.x0;
+    X.save();
+    X.beginPath(); X.rect(s.x0, gy - 2, w, H); X.clip();
+    // couches, de la surface vers la profondeur
+    var L = [['#8fe0b8', 13], ['#c9a97e', 26], ['#b98f6d', 34], ['#9d7fa8', 46], ['#7a6690', 400]];
+    var y = gy;
+    L.forEach(function(l, k){
+      X.fillStyle = l[0]; X.fillRect(s.x0, y, w, l[1]);
+      X.fillStyle = 'rgba(60,40,70,.12)';           // ombre au pied de chaque couche
+      X.fillRect(s.x0, y + l[1] - 5, w, 5);
+      // ligne de separation ondulee
+      if(k < 4){
+        X.strokeStyle = 'rgba(70,45,80,.24)'; X.lineWidth = 1.6;
+        X.beginPath();
+        for(var x = s.x0; x <= s.x1; x += 6)
+          X.lineTo(x, y + l[1] + Math.sin((x + cam) * 0.03 + k * 2) * 3);
+        X.stroke();
+      }
+      y += l[1];
+    });
+    // cailloux et graviers deterministes
+    for(var p = Math.floor((cam + s.x0) / 11) * 11; p < cam + s.x1; p += 11){
+      var q = hash(p * 1.7), py = gy + 22 + q * 130, px = p - cam + (hash(p) - 0.5) * 8;
+      if(py > H) continue;
+      X.globalAlpha = 0.35 + q * 0.3;
+      X.fillStyle = q > 0.6 ? '#e8d6c2' : '#6f5a86';
+      X.beginPath(); X.ellipse(px, py, 2 + q * 3.4, 1.6 + q * 2.4, q * 3, 0, 6.283); X.fill();
+    }
+    X.globalAlpha = 1;
+    X.restore();
+    // herbe de surface qui deborde
+    X.fillStyle = '#8fe0b8';
+    X.beginPath(); X.moveTo(s.x0, gy + 13);
+    for(var x3 = s.x0; x3 <= s.x1; x3 += 5)
+      X.lineTo(x3, gy + Math.sin((x3 + cam) * 0.05) * 2.5);
+    X.lineTo(s.x1, gy + 13); X.closePath(); X.fill();
+    X.strokeStyle = '#5fbf95'; X.lineWidth = 2;
+    for(var w2 = Math.floor((cam + s.x0) / 9) * 9; w2 < cam + s.x1; w2 += 9){
+      var qx = w2 - cam, q2 = hash(w2 * 3.1);
+      X.beginPath(); X.moveTo(qx, gy + 2);
+      X.lineTo(qx + (q2 - 0.5) * 7, gy - 5 - q2 * 6); X.stroke();
+    }
+  });
+}
+
+// ================================================================ 3 FROSTING
+function frosting(X, W, H, cam, T){
+  var top = H * 0.42;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 26, w = s.x1 - s.x0;
+    // gateau
+    var g = X.createLinearGradient(0, gy, 0, H);
+    g.addColorStop(0, '#ffe9c9'); g.addColorStop(0.3, '#f6cfa2');
+    g.addColorStop(1, '#c98f6b');
+    X.fillStyle = g; X.fillRect(s.x0, gy + 22, w, H);
+    // glacage avec coulures
+    X.fillStyle = '#fff6fb';
+    X.beginPath(); X.moveTo(s.x0, gy + 30);
+    for(var x = s.x0; x <= s.x1; x += 2) X.lineTo(x, gy);
+    X.lineTo(s.x1, gy + 30);
+    for(var d = s.x1; d >= s.x0; d -= 26){
+      var q = hash(Math.floor((d + cam) / 26));
+      X.quadraticCurveTo(d - 13, gy + 30 + q * 26, d - 26, gy + 26);
+    }
+    X.closePath();
+    var ig = X.createLinearGradient(0, gy - 4, 0, gy + 46);
+    ig.addColorStop(0, '#fffdff'); ig.addColorStop(0.4, '#ffe6f4'); ig.addColorStop(1, '#f6c7e2');
+    X.fillStyle = ig; X.fill();
+    // reflet brillant
+    X.save(); X.clip();
+    var hl = X.createLinearGradient(0, gy + 2, 0, gy + 15);
+    hl.addColorStop(0, 'rgba(255,255,255,.95)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    X.fillStyle = hl; X.fillRect(s.x0, gy + 2, w, 15);
+    X.restore();
+    // vermicelles
+    for(var p = Math.floor((cam + s.x0) / 17) * 17; p < cam + s.x1; p += 17){
+      var q2 = hash(p * 2.3), px = p - cam, py = gy + 8 + q2 * 22;
+      X.save(); X.translate(px, py); X.rotate(q2 * 6.283);
+      X.fillStyle = ['#ff9ec7', '#ffd274', '#8ee2ba', '#9fd8ff', '#c9a6ff'][Math.floor(q2 * 5)];
+      X.beginPath();
+      if(X.roundRect) X.roundRect(-4, -1.6, 8, 3.2, 1.6); else X.rect(-4, -1.6, 8, 3.2);
+      X.fill(); X.restore();
+    }
+    // bord du gateau
+    X.strokeStyle = 'rgba(150,95,70,.35)'; X.lineWidth = 2;
+    X.beginPath(); X.moveTo(s.x0, gy + 30); X.lineTo(s.x0, H);
+    X.moveTo(s.x1, gy + 30); X.lineTo(s.x1, H); X.stroke();
+  });
+}
+
+// ================================================================ 4 MEADOW
+function meadow(X, W, H, cam, T){
+  var top = H * 0.42;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 26, w = s.x1 - s.x0, x, q;
+    X.save();
+    X.beginPath(); X.rect(s.x0 - 20, 0, w + 40, H); X.clip();
+    // rangee arriere, sombre et haute
+    X.strokeStyle = '#4e9d7f'; X.lineWidth = 3.2; X.lineCap = 'round';
+    for(x = Math.floor((cam + s.x0) / 7) * 7; x < cam + s.x1; x += 7){
+      q = hash(x * 1.3);
+      var bx = x - cam, sway = Math.sin(T * 1.6 + x * 0.03) * 3;
+      X.beginPath(); X.moveTo(bx, gy + 4);
+      X.quadraticCurveTo(bx + sway, gy - 10, bx + sway * 2.4 + (q - 0.5) * 8, gy - 16 - q * 12);
+      X.stroke();
+    }
+    // corps
+    var g = X.createLinearGradient(0, gy, 0, H);
+    g.addColorStop(0, '#79c9a6'); g.addColorStop(0.35, '#57a98c'); g.addColorStop(1, '#2f6b5b');
+    X.fillStyle = g; X.fillRect(s.x0, gy, w, H);
+    var ao = X.createLinearGradient(0, gy, 0, gy + 26);
+    ao.addColorStop(0, 'rgba(30,70,60,.35)'); ao.addColorStop(1, 'rgba(30,70,60,0)');
+    X.fillStyle = ao; X.fillRect(s.x0, gy, w, 26);
+    // rangee avant, claire, qui deborde sur l arete
+    for(x = Math.floor((cam + s.x0) / 6) * 6; x < cam + s.x1; x += 6){
+      q = hash(x * 2.9);
+      var fx = x - cam, sw = Math.sin(T * 2.1 + x * 0.045) * 3.4;
+      X.strokeStyle = q > 0.5 ? '#a8ecc9' : '#8adeb0';
+      X.lineWidth = 2.6;
+      X.beginPath(); X.moveTo(fx, gy + 8);
+      X.quadraticCurveTo(fx + sw, gy - 4, fx + sw * 2 + (q - 0.5) * 7, gy - 9 - q * 9);
+      X.stroke();
+    }
+    // fleurs et cailloux
+    for(x = Math.floor((cam + s.x0) / 46) * 46; x < cam + s.x1; x += 46){
+      q = hash(x * 5.1);
+      var px = x - cam + (q - 0.5) * 20, py = gy - 20 - q * 12;
+      X.strokeStyle = '#5fbf95'; X.lineWidth = 2;
+      X.beginPath(); X.moveTo(px - Math.sin(T * 2 + x) * 3, gy); X.lineTo(px, py); X.stroke();
+      X.fillStyle = ['#ffd6e8', '#fff2b8', '#dcd0ff'][Math.floor(q * 3)];
+      for(var f = 0; f < 5; f++){
+        X.beginPath();
+        X.arc(px + Math.cos(f * 1.257 + q) * 3.6, py + Math.sin(f * 1.257 + q) * 3.6, 2.7, 0, 6.283);
+        X.fill();
+      }
+      X.fillStyle = '#ffb85c'; X.beginPath(); X.arc(px, py, 1.9, 0, 6.283); X.fill();
+    }
+    X.restore();
+  });
+}
+
+// ================================================================ 5 GEODE
+function geode(X, W, H, cam, T){
+  var top = H * 0.42;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 26, w = s.x1 - s.x0;
+    X.save();
+    X.beginPath(); X.rect(s.x0, gy - 30, w, H); X.clip();
+    // facettes : bandes verticales de largeur variable, teintes proches
+    var x = s.x0;
+    while(x < s.x1){
+      var q = hash(Math.floor((x + cam) / 30) * 30), fw = 22 + q * 30;
+      var topA = gy + (hash(Math.floor((x + cam) / 30) * 31) - 0.5) * 9;
+      var topB = gy + (hash(Math.floor((x + cam + fw) / 30) * 31) - 0.5) * 9;
+      var g = X.createLinearGradient(0, topA, 0, H);
+      var hu = 150 + q * 90;
+      g.addColorStop(0, 'hsl(' + hu + ',52%,' + (74 + q * 8) + '%)');
+      g.addColorStop(0.35, 'hsl(' + hu + ',44%,' + (58 + q * 8) + '%)');
+      g.addColorStop(1, 'hsl(' + (hu + 30) + ',38%,34%)');
+      X.fillStyle = g;
+      X.beginPath();
+      X.moveTo(x, topA); X.lineTo(x + fw, topB); X.lineTo(x + fw, H); X.lineTo(x, H);
+      X.closePath(); X.fill();
+      X.strokeStyle = 'rgba(255,255,255,.28)'; X.lineWidth = 1.2;
+      X.beginPath(); X.moveTo(x, topA); X.lineTo(x, H); X.stroke();
+      x += fw;
+    }
+    // arete lumineuse
+    X.strokeStyle = 'rgba(255,255,255,.9)'; X.lineWidth = 3; X.lineJoin = 'round';
+    X.beginPath();
+    var px2 = s.x0;
+    while(px2 <= s.x1){
+      var q3 = hash(Math.floor((px2 + cam) / 30) * 31), fw2 = 22 + hash(Math.floor((px2 + cam) / 30) * 30) * 30;
+      X.lineTo(px2, gy + (q3 - 0.5) * 9); px2 += fw2;
+    }
+    X.stroke();
+    // gemmes incrustees
+    for(var p = Math.floor((cam + s.x0) / 90) * 90; p < cam + s.x1; p += 90){
+      var q4 = hash(p * 7.7), gx = p - cam + q4 * 40, gyy = gy + 34 + q4 * 60;
+      if(gyy > H - 6) continue;
+      X.save(); X.translate(gx, gyy); X.rotate(q4 * 2);
+      var tw = (Math.sin(T * 2.4 + q4 * 6) + 1) * 0.5;
+      X.fillStyle = 'hsl(' + (300 + q4 * 60) + ',80%,' + (72 + tw * 12) + '%)';
+      X.beginPath(); X.moveTo(0, -8); X.lineTo(6, 0); X.lineTo(0, 9); X.lineTo(-6, 0);
+      X.closePath(); X.fill();
+      X.fillStyle = 'rgba(255,255,255,.55)';
+      X.beginPath(); X.moveTo(0, -8); X.lineTo(-6, 0); X.lineTo(0, 9); X.closePath(); X.fill();
+      X.restore();
+    }
+    X.restore();
+  });
+}
+
+// ================================================================ 6 CLOUD
+function cloud(X, W, H, cam, T){
+  var top = H * 0.44;
+  segments(cam, W).forEach(function(s){
+    var gy = top + (hash(s.id) - 0.5) * 24, w = s.x1 - s.x0;
+    // ombre lilas dessous
+    X.fillStyle = 'rgba(180,150,215,.4)';
+    X.beginPath(); X.moveTo(s.x0, gy + 16);
+    for(var x = s.x0; x <= s.x1; x += 26){
+      var q = hash(Math.floor((x + cam) / 26));
+      X.arc(x + 13, gy + 20 + q * 6, 15 + q * 9, Math.PI, 0);
+    }
+    X.lineTo(s.x1, H); X.lineTo(s.x0, H); X.closePath(); X.fill();
+    // masse principale
+    X.beginPath(); X.moveTo(s.x0, gy + 10);
+    for(var x2 = s.x0; x2 <= s.x1; x2 += 24){
+      var q2 = hash(Math.floor((x2 + cam) / 24) * 3);
+      X.arc(x2 + 12, gy + 8, 15 + q2 * 11, Math.PI, 0);
+    }
+    X.lineTo(s.x1, H + 10); X.lineTo(s.x0, H + 10); X.closePath();
+    var g = X.createLinearGradient(0, gy - 14, 0, H);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.28, '#fdf7ff');
+    g.addColorStop(0.7, '#e6d8f6'); g.addColorStop(1, '#c9b6e8');
+    X.fillStyle = g; X.fill();
+    // volutes qui se detachent par le bas
+    X.save(); X.globalAlpha = 0.5; X.fillStyle = '#efe4fb';
+    for(var p = Math.floor((cam + s.x0) / 40) * 40; p < cam + s.x1; p += 40){
+      var q3 = hash(p * 4.4), px = p - cam, py = gy + 60 + q3 * 70 + Math.sin(T * 1.2 + q3 * 6) * 6;
+      if(py > H + 20) continue;
+      X.beginPath();
+      X.arc(px, py, 9 + q3 * 12, 0, 6.283);
+      X.arc(px + 15, py + 4, 7 + q3 * 8, 0, 6.283);
+      X.fill();
+    }
+    X.restore();
+    // liseré nacre sur la crete
+    X.save();
+    X.beginPath(); X.moveTo(s.x0, gy + 10);
+    for(var x3 = s.x0; x3 <= s.x1; x3 += 24){
+      var q4 = hash(Math.floor((x3 + cam) / 24) * 3);
+      X.arc(x3 + 12, gy + 8, 15 + q4 * 11, Math.PI, 0);
+    }
+    X.strokeStyle = 'rgba(255,255,255,.95)'; X.lineWidth = 3.4; X.stroke();
+    X.restore();
+  });
+}
+
+// ---------------------------------------------------------------- panneaux
+var STYLES = [
+  { n:'STORYBOOK', f:storybook,
+    d:"Album jeunesse. Arête cernée d'encre comme la licorne, ombre portée sous l'herbe pour l'épaisseur, touffes et fleurs. Le plus cohérent avec le personnage." },
+  { n:'STRATA', f:strata,
+    d:"Coupe géologique : herbe, terre, argile, roche. Les couches et les graviers donnent un poids que le reste n'a pas. Le plus solide visuellement." },
+  { n:'FROSTING', f:frosting,
+    d:"Glaçage et vermicelles sur un biscuit, avec coulures. Le plus littéralement dans le thème, et le plus risqué si tout l'écran est déjà sucré." },
+  { n:'MEADOW', f:meadow,
+    d:"Trois rangées d'herbe superposées qui ondulent, plus fleurs sur tige. La profondeur vient de la densité, pas du contour." },
+  { n:'GEODE', f:geode,
+    d:"Facettes cristallines à teintes voisines, arête lumineuse, gemmes incrustées. Le plus graphique, celui qui contraste le mieux avec des rubans ronds." },
+  { n:'CLOUD', f:cloud,
+    d:"Le sol est une masse nuageuse avec un dessous qui s'effiloche. Le plus féerique, mais il enlève la notion de terre ferme." }
+];
+
+var list = document.getElementById('list'), panels = [];
+STYLES.forEach(function(st, i){
+  var el = document.createElement('div');
+  el.className = 'p';
+  el.innerHTML = '<div class=hd><span class=n>' + (i + 1) + '</span><span class=t>' + st.n + '</span></div>' +
+    '<canvas></canvas><p class=d>' + st.d + '</p>';
+  list.appendChild(el);
+  panels.push(el.querySelector('canvas'));
+});
+
+var cam = 0, last = 0;
+function frame(now){
+  var dt = Math.min(0.05, (now - last) / 1000) || 0; last = now;
+  cam += dt * (document.getElementById('sp').value * 2.6);
+  var T = now / 1000;
+  panels.forEach(function(c, i){
+    var dpr = Math.min(2, devicePixelRatio || 1);
+    var w = c.clientWidth, h = c.clientHeight;
+    if(c.width !== w * dpr){ c.width = w * dpr; c.height = h * dpr; }
+    var X = c.getContext('2d');
+    X.setTransform(dpr, 0, 0, dpr, 0, 0);
+    sky(X, w, h);
+    STYLES[i].f(X, w, h, cam, T);
+    pony(X, w * 0.3, h * 0.42 + (hash(Math.floor((cam - SPAN) / SPAN)) - 0.5) * 26, T);
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

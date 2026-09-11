@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.zip
+.js13k-check/
+.gen-img/
+media/.js13k-images/
+.DS_Store
+# le lockfile est exclu par le gitignore global de la machine : on le force ici
+!package-lock.json
