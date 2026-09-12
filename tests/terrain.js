@@ -1,6 +1,6 @@
-// Le decor du sol doit etre STABLE quand la camera avance : on capture les
-// positions monde des vermicelles a deux positions de camera qui changent
-// le bucket de depart visible, et on exige le meme ensemble.
+// The ground decor must stay STABLE while the camera moves forward: we capture
+// the world positions of the sprinkles at two camera positions that change
+// the first visible bucket, and require the same set.
 var fs=require('fs'), vm=require('vm');
 var PROPS={}; 'fillStyle strokeStyle lineWidth lineCap lineJoin font textAlign textBaseline globalAlpha shadowColor shadowBlur shadowOffsetY letterSpacing'.split(' ').forEach(p=>PROPS[p]=1);
 var gr={addColorStop:function(){}}, tr=[], arcs=[];
@@ -21,23 +21,23 @@ SB.window=SB;
 var js=/<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(process.argv[2]||'index.html','utf8'))[1];
 var C=vm.createContext(SB); vm.runInContext(js,C);
 var R=c=>vm.runInContext(c,C);
-var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' ECHEC')+'  '+n); }
+var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' FAIL ')+'  '+n); }
 
-// Positions MONDE des vermicelles, limitees a la zone visible commune aux
-// deux cameras : ceux qui entrent ou sortent par un bord sont normaux.
+// WORLD positions of the sprinkles, limited to the visible area shared by
+// both cameras: those entering or leaving through an edge are expected.
 function sprinklesAt(cx, lo, hi){
   tr=[]; R('camX='+cx+'; camY=200; drawTerrain('+cx+', 200, Math.max(0,bucket('+cx+')-2), Math.min(NB,bucket('+cx+'+W)+3));');
   return tr.map(function(p){ return [Math.round((p[0]+cx)*10)/10, Math.round(p[1]*10)/10]; })
            .filter(function(p){ return p[0]>=lo && p[0]<=hi; })
            .map(function(p){ return p[0]+':'+p[1]; }).sort().join('|');
 }
-// La premiere plateforme (buckets 0 a ~50) depasse l'ecran : on avance de 8 px
-// pour changer b0, puis encore de 8. Les vermicelles ne doivent pas bouger.
+// The first platform (buckets 0 to ~50) extends past the screen: we move 8 px
+// forward to change b0, then 8 more. The sprinkles must not move.
 var W=R('W'), a=sprinklesAt(40,80,40+W-40), b=sprinklesAt(48,80,40+W-40), c=sprinklesAt(56,80,40+W-40);
-t('vermicelles identiques quand le bucket de depart visible change (+8 px)', a===b && b===c && a.length>0);
-console.log('       '+(a.split('|').length)+' vermicelles suivis');
+t('sprinkles identical when the first visible bucket changes (+8 px)', a===b && b===c && a.length>0);
+console.log('       '+(a.split('|').length)+' sprinkles tracked');
 
-// Meme test sur le nuage, seconde moitie : arcs en coordonnees monde
+// Same test on the cloud, second half: arcs in world coordinates
 function arcsAt(cx, lo, hi){
   arcs=[]; R('camX='+cx+'; camY=200; drawTerrain('+cx+', 200, Math.max(0,bucket('+cx+')-2), Math.min(NB,bucket('+cx+'+W)+3));');
   return arcs.map(function(p){ return [Math.round((p[0]+cx)*10)/10, Math.round(p[1]*10)/10, Math.round(p[2]*10)/10]; })
@@ -46,6 +46,6 @@ function arcsAt(cx, lo, hi){
 }
 var far=R('(function(){for(var b=Math.round(GOAL*0.7);b<NB;b++) if(ground[b]>=0&&ground[b+1]>=0&&ground[b+2]>=0) return b;return 0})()')*8;
 var d=arcsAt(far+30, far+80, far+30+W-40), e=arcsAt(far+38, far+80, far+30+W-40);
-t('arcs du nuage identiques quand la camera avance de 8 px', d===e && d.length>0);
-console.log(ok.every(Boolean)?'\nDECOR DU SOL STABLE':'\nDES TESTS ECHOUENT');
+t('cloud arcs identical when the camera moves forward by 8 px', d===e && d.length>0);
+console.log(ok.every(Boolean)?'\nGROUND DECOR STABLE':'\nSOME TESTS FAIL');
 process.exit(ok.every(Boolean)?0:1);

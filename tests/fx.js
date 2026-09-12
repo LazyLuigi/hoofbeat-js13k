@@ -1,4 +1,4 @@
-// Chaque pouvoir doit produire son effet, et seulement quand il est actif.
+// Each power must produce its effect, and only when it is active.
 var fs=require('fs'), vm=require('vm');
 var PROPS={}; 'fillStyle strokeStyle lineWidth lineCap lineJoin miterLimit lineDashOffset font textAlign textBaseline globalAlpha globalCompositeOperation shadowColor shadowBlur shadowOffsetX shadowOffsetY imageSmoothingEnabled letterSpacing filter direction'.split(' ').forEach(p=>PROPS[p]=1);
 var ARCS={n:0};
@@ -19,125 +19,125 @@ SB.window=SB;
 var js=/<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(process.argv[2]||'index.html','utf8'))[1];
 var C=vm.createContext(SB); vm.runInContext(js,C);
 var R=c=>vm.runInContext(c,C);
-var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' ECHEC')+'  '+n); }
+var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' FAIL ')+'  '+n); }
 function kinds(){ return R('parts.map(function(p){return p.k})'); }
 function count(k){ return kinds().filter(x=>x===k).length; }
 
-// --- DOUBLE SAUT : couronne de paillettes
+// --- DOUBLE JUMP: crown of sparkles
 R('startRun(); parts=[]; P.ground=0; P.jumps=1; P.vy=100; tapped=1; update(1/60);');
-t('double saut -> paillettes (k=1)', count(1) >= 14);
-t('double saut -> paillettes qui retombent doucement',
+t('double jump -> sparkles (k=1)', count(1) >= 14);
+t('double jump -> sparkles fall back gently',
   R('parts.filter(function(p){return p.k===1}).every(function(p){return p.g<0.4})'));
 
-// --- RUEE : bouffees arc-en-ciel vers l arriere
+// --- DASH: rainbow puffs trailing behind
 R('startRun(); parts=[]; P.ground=0; P.dashUsed=0; P.dash=0; dashTap=1;');
 R('for(var i=0;i<10;i++) update(1/60);');
-t('ruee -> bouffees (k=2)', count(2) >= 6);
-t('ruee -> bouffees emises DERRIERE la licorne',
+t('dash -> puffs (k=2)', count(2) >= 6);
+t('dash -> puffs emitted BEHIND the unicorn',
   R('parts.filter(function(p){return p.k===2}).every(function(p){return p.x <= P.x && p.vx < 0})'));
-t('ruee -> les bouffees flottent au lieu de tomber',
+t('dash -> puffs float instead of falling',
   R('parts.filter(function(p){return p.k===2}).every(function(p){return p.g < 0})'));
 
-// --- PLANE : etoiles + pattes ecartees, uniquement quand actif
+// --- GLIDE: stars + spread legs, only when active
 R('startRun(); parts=[]; P.ground=0; P.vy=400; jumpHeld=0; update(1/60);');
-t('plane inactif -> P.gl a 0 et aucune etoile', R('P.gl')===0 && count(1)===0);
+t('glide inactive -> P.gl at 0 and no stars', R('P.gl')===0 && count(1)===0);
 R('parts=[]; P.ground=0; P.vy=400; jumpHeld=1;');
 R('for(var i=0;i<20;i++){ P.vy=400; update(1/60); }');
-t('plane actif -> P.gl a 1', R('P.gl')===1);
-t('plane actif -> trainee d etoiles', count(1) >= 3);
-t('plane actif -> vitesse de chute plafonnee', R('P.vy') <= 111);
+t('glide active -> P.gl at 1', R('P.gl')===1);
+t('glide active -> trail of stars', count(1) >= 3);
+t('glide active -> fall speed capped', R('P.vy') <= 111);
 
-// --- BOUCLIER : dessine seulement s il reste des charges
+// --- SHIELD: drawn only while charges remain
 R('startRun(); mode="play"; P.sh=3; P.inv=0;');
-t('bouclier a 3 charges -> effet dessine', (ARCS.n=0, R('drawShield(camX,camY)'), ARCS.n) >= 9);
+t('shield with 3 charges -> effect drawn', (ARCS.n=0, R('drawShield(camX,camY)'), ARCS.n) >= 9);
 R('P.sh=0; P.inv=0;');
-t('bouclier vide -> aucun effet', (ARCS.n=0, R('drawShield(camX,camY)'), ARCS.n) === 0);
+t('empty shield -> no effect', (ARCS.n=0, R('drawShield(camX,camY)'), ARCS.n) === 0);
 
-// --- MEMOIRE : atterrir sur une trainee scintille
-// jumpHeld doit etre remis a 0 : sinon le plane du test precedent
-// freine la chute et fausse l atterrissage.
+// --- MEMORY: landing on a trail sparkles
+// jumpHeld must be reset to 0: otherwise the glide from the previous test
+// slows the fall and skews the landing.
 R('startRun(); jumpHeld=0; var br=new Array(NB).fill(-1); for(var i=60;i<=120;i++) br[i]=300; ghosts=[br];');
 R('P.x=70*BW; P.y=180; P.vy=700; P.ground=0; parts=[];');
 R('for(var i=0;i<60;i++){ update(1/60); if(P.ground) break; }');
-t('atterrissage sur une trainee -> paillettes', R('P.ground') && count(1) > 0);
+t('landing on a trail -> sparkles', R('P.ground') && count(1) > 0);
 R('startRun(); jumpHeld=0; P.x=40; P.y=ground[5]-260; P.vy=700; P.ground=0; parts=[]; ghosts=[];');
 R('for(var i=0;i<60;i++){ update(1/60); if(P.ground) break; }');
-t('atterrissage sur la terre ferme -> pas de paillettes', R('P.ground') && count(1) === 0);
+t('landing on solid ground -> no sparkles', R('P.ground') && count(1) === 0);
 
-// --- MORT : la licorne explose en confettis
+// --- DEATH: the unicorn bursts into confetti
 R('startRun(); jumpHeld=0; conf=[]; parts=[]; boom=0; P.sh=0; P.inv=0; die();');
-t('mort -> gerbe de confettis', R('conf.length') >= 100);
-t('mort -> paillettes en etoile projetees', R('parts.filter(function(p){return p.k===1}).length') >= 26);
-t('mort -> onde de choc armee', R('boom') > 1.5 && R('boomX') > 0);
-t('mort -> on passe bien sur l ecran de mort', R('mode') === 'dead');
+t('death -> burst of confetti', R('conf.length') >= 100);
+t('death -> star sparkles thrown out', R('parts.filter(function(p){return p.k===1}).length') >= 26);
+t('death -> shockwave armed', R('boom') > 1.5 && R('boomX') > 0);
+t('death -> we do switch to the death screen', R('mode') === 'dead');
 var UNI = { n:0 };
 R('mode="dead"');
-t('la licorne n est plus dessinee apres avoir explose',
+t('the unicorn is no longer drawn after exploding',
   (UNI.n = 0, R('(function(){var n=0,o=drawUnicorn;drawUnicorn=function(){n++};render();drawUnicorn=o;return n})()')) === 0);
 R('mode="play"');
-t('la licorne revient en jeu',
+t('the unicorn comes back into play',
   R('(function(){var n=0,o=drawUnicorn;drawUnicorn=function(){n++};render();drawUnicorn=o;return n})()') === 1);
 R('startRun();');
-t('relancer nettoie l explosion', R('conf.length') === 0 && R('boom') === 0);
+t('restarting clears the explosion', R('conf.length') === 0 && R('boom') === 0);
 
-// --- CHUTE : mortelle a 220 px sous le sol local, jamais sous une trainee
+// --- FALL: lethal 220 px below the local ground, never below a trail
 R('startRun(); jumpHeld=0; S.sh=3; P.sh=3; P.inv=0;');
 var ref=R('fallRef(bucket(P.x))');
 R('P.y='+(ref+150)+'; P.ground=0; P.vy=300; mode="play";');
 R('for(var i=0;i<6;i++){ update(1/60); if(mode!=="play") break; }');
-t('150 px sous le sol local : on vit encore', R('mode') === 'play');
+t('150 px below the local ground: still alive', R('mode') === 'play');
 R('P.y='+(ref+230)+'; P.vy=0; P.ground=0; P.sh=3; P.inv=0; mode="play"; update(1/60);');
-t('au-dela de 220 px : mort immediate', R('mode') === 'dead');
-t('la mort par chute ignore le bouclier', R('P.sh') === 3);
+t('beyond 220 px: instant death', R('mode') === 'dead');
+t('death by falling ignores the shield', R('P.sh') === 3);
 
-// Le cas qui tuait en plein vol : une trainee tres haute dans le ciel, puis
-// une chute vers la plateforme. La reference ne doit pas etre la trainee.
+// The case that used to kill mid-air: a trail very high in the sky, then
+// a fall toward the platform. The reference must not be the trail.
 R('startRun(); jumpHeld=0; var skyT=new Array(NB).fill(-1); for(var i=8;i<=14;i++) skyT[i]=20; ghosts=[skyT];');
 R('P.x=10*BW; P.y=20; P.vy=0; P.ground=1; mode="play";');
-R('for(var i=0;i<4;i++) update(1/60);');            // on court sur le ruban celeste
-t('on tient debout sur un ruban a y=20', !!R('P.ground') && R('P.y')<=24);
-R('for(var i=0;i<60;i++){ update(1/60); if(!P.ground) break; }');   // on sort du ruban
+R('for(var i=0;i<4;i++) update(1/60);');            // running on the sky trail
+t('we stand on a trail at y=20', !!R('P.ground') && R('P.y')<=24);
+R('for(var i=0;i<60;i++){ update(1/60); if(!P.ground) break; }');   // we leave the trail
 R('for(var i=0;i<200;i++){ update(1/60); if(mode!=="play"||P.ground) break; }');
-t('en tombant du ruban on ATTERRIT sur le sol au lieu de mourir en vol',
+t('falling off the trail we LAND on the ground instead of dying mid-air',
   R('mode')==='play' && !!R('P.ground') && R('P.y')>200);
-// --- PIC : ne blesse que dans sa hauteur
+// --- SPIKE: only hurts within its height
 R('startRun(); jumpHeld=0; S.sh=3; P.sh=3; P.inv=0;');
 R('var sb=0; for(var i=40;i<NB;i++) if(spk[i]){ sb=i; break; }');
-t('un pic existe dans le monde', R('sb') > 0);
+t('a spike exists in the world', R('sb') > 0);
 R('P.x=sb*BW+3; P.y=ground[sb]+80; P.ground=0; P.vy=200; P.inv=0;');
 R('update(1/60);');
-t('on chute 80 px sous le pic : le bouclier reste intact', R('P.sh') === 3);
+t('falling 80 px below the spike: the shield stays intact', R('P.sh') === 3);
 R('P.x=sb*BW+3; P.y=ground[sb]; P.ground=1; P.vy=0; P.inv=0; update(1/60);');
-t('on touche le pic a sa hauteur : le bouclier encaisse', R('P.sh') === 2);
+t('touching the spike at its height: the shield takes the hit', R('P.sh') === 2);
 
-// --- DELAI DE MORT : l explosion joue seule avant le panneau
+// --- DEATH DELAY: the explosion plays alone before the panel
 R('startRun(); jumpHeld=0; P.sh=0; P.inv=0;');
 R('var _p=panel, PN=0; panel=function(){ PN++; return _p.apply(null, arguments); };');
 R('die();');
-t('la mort arme le delai', R('deadT') > 0.9);
+t('death arms the delay', R('deadT') > 0.9);
 R('PN=0; render();');
-t('juste apres la mort : aucun panneau dessine', R('PN') === 0);
-t('mais l explosion est bien la', R('conf.length') > 100 && R('boom') > 0);
+t('right after death: no panel drawn', R('PN') === 0);
+t('but the explosion is there', R('conf.length') > 100 && R('boom') > 0);
 
-// un joueur qui tapote ne doit ni relancer ni declencher un bouton
+// a player who taps must neither restart nor trigger a button
 var ub = R('upBtn()');
 R('press(' + (ub.x + ub.w / 2) + ',' + (ub.y + ub.h / 2) + ');');
-t('un appui sur la zone UPGRADES ne fait rien', R('mode') === 'dead');
+t('a press on the UPGRADES area does nothing', R('mode') === 'dead');
 R('tapped=1; update(1/60);');
-t('un appui ne relance pas la partie', R('mode') === 'dead');
+t('a press does not restart the run', R('mode') === 'dead');
 
-R('for(var i=0;i<70;i++) update(1/60);');          // ~1,17 s
-t('apres une seconde le delai est ecoule', R('deadT') <= 0);
+R('for(var i=0;i<70;i++) update(1/60);');          // ~1.17 s
+t('after one second the delay has elapsed', R('deadT') <= 0);
 R('PN=0; render();');
-t('le panneau apparait alors', R('PN') === 1);
+t('the panel then appears', R('PN') === 1);
 R('tapped=1; update(1/60);');
-t('et l appui relance la partie', R('mode') === 'play');
+t('and the press restarts the run', R('mode') === 'play');
 R('panel=_p;');
 
-// --- pas de fuite de particules
+// --- no particle leak
 R('startRun(); jumpHeld=0; for(var i=0;i<2400;i++){ if(i%23===0) tapped=1; if(i%97===0) dashTap=1; jumpHeld=i%50<20; update(1/60); }');
-t('aucune fuite de particules sur 40 s', R('parts.length') < 400);
-console.log('       particules vivantes apres 40 s :', R('parts.length'));
+t('no particle leak over 40 s', R('parts.length') < 400);
+console.log('       live particles after 40 s:', R('parts.length'));
 
-console.log(ok.every(Boolean)?'\nEFFETS DE POUVOIRS VALIDES':'\nDES TESTS ECHOUENT');
+console.log(ok.every(Boolean)?'\nPOWER EFFECTS VALIDATED':'\nSOME TESTS FAIL');
 process.exit(ok.every(Boolean)?0:1);

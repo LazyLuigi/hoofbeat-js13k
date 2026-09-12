@@ -10,12 +10,12 @@ canvas{display:block;width:100%;height:100%}
 // =====================================================================
 //  HOOFBEAT - js13k 2026 (theme: Unicorns and Rainbows)
 //
-//  Tu ne peux qu'avancer. Ta trainee arc-en-ciel est enregistree.
-//  Au run suivant, elle devient SOLIDE. Certains gouffres sont
-//  volontairement infranchissables : tu meurs pour poser le chemin.
-//  Progression permanente facon Dead Cells (memoire, double saut, ruee).
+//  You can only run forward. Your rainbow trail is recorded.
+//  Next run, it turns SOLID. Some chasms are deliberately
+//  impassable: you die to lay the path.
+//  Permanent progression, Dead Cells style (memory, double jump, dash).
 //
-//  Source lisible. La compression se fait uniquement via build.sh.
+//  Readable source. Compression happens only through build.sh.
 // =====================================================================
 
 // ---------- Canvas ------------------------------------------------------
@@ -28,13 +28,13 @@ function resize(){
 }
 addEventListener('resize', resize); resize();
 
-// ---------- PRNG graine (mulberry32) ------------------------------------
+// ---------- Seeded PRNG (mulberry32) ------------------------------------
 function rng(s){ return function(){ s |= 0; s = s + 0x6D2B79F5 | 0;
   var t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
   return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
-// ---------- Sauvegarde --------------------------------------------------
-// localStorage quand il existe, miroir memoire sinon (previews sandboxees).
+// ---------- Save game ---------------------------------------------------
+// localStorage when available, in-memory mirror otherwise (sandboxed previews).
 var MEM = {};
 function sset(k, v){ MEM[k] = v; try{ localStorage.setItem(k, v); }catch(e){} }
 function sget(k){ try{ var v = localStorage.getItem(k); if(v != null) return v; }catch(e){}
@@ -45,32 +45,32 @@ function fresh(){ return { p:0, best:0, mem:0, dbl:0, dash:0, glide:0,
 var S = fresh();
 (function(){ var raw = sget('hb');
   if(raw){ try{ var o = JSON.parse(raw); for(var k in S) if(o[k] != null) S[k] = o[k]; }catch(e){} } })();
-// Sauvegarde vide : on tire un monde neuf. La graine est persistee, donc le
-// meme joueur retrouve exactement son parcours, trainees comprises.
+// Empty save: roll a brand-new world. The seed is persisted, so the same
+// player gets exactly their course back, trails included.
 function newSeed(){ return (Math.random() * 2e9 | 0) || 7; }
 if(!S.seed) S.seed = newSeed();
 
-// ---------- Monde -------------------------------------------------------
-// Le niveau est un tableau indexe par "bucket" de 8 px. Le coureur n'avance
-// que vers la droite, donc une trainee est une fonction pure de x :
-// collision en O(1) et memoire minuscule.
-var BW = 8, NB = 2508;                 // largeur bucket, nombre de buckets (20 000 px pile)
-var EASY = 100;                        // premiers metres sans piege, le temps d'apprendre
-var MS = 40;                           // buckets entre deux paliers de credits (320 px)
-var CP = 200;                          // buckets entre deux bornes de distance
+// ---------- World -------------------------------------------------------
+// The level is an array indexed by 8 px "bucket". The runner only moves
+// right, so a trail is a pure function of x:
+// O(1) collision and a tiny memory footprint.
+var BW = 8, NB = 2508;                 // bucket width, bucket count (20 000 px exactly)
+var EASY = 100;                        // first trap-free metres, time to learn
+var MS = 40;                           // buckets between two credit tiers (320 px)
+var CP = 200;                          // buckets between two distance markers
 var GRAV = 1500, JUMPV = -470, SPD = 270;
-// Portee max d'un saut = 2*470/1500 * 270 = 169 px = ~21 buckets.
-// Tout gouffre au-dela est infranchissable au premier run. C'est voulu.
+// Max jump range = 2*470/1500 * 270 = 169 px = ~21 buckets.
+// Any wider chasm is impassable on the first run. That is intended.
 var GOAL = NB - 8;
 var ground, plats, spk, prisms, clouds, crows, flags;
 
-// Dix drapeaux jalonnent le parcours par tranches de 10 %. Franchir un
-// drapeau ouvre definitivement une famille de competences : c'est ce qui
-// transforme la distance en contenu plutot qu'en simple score.
+// Ten flags mark the course in 10 % slices. Passing a flag permanently
+// unlocks a skill family: that is what turns distance into content
+// rather than a mere score.
 var FLAG = ['MEMORY', 'DOUBLE JUMP', 'GLIDE', 'SHIELD', 'DASH', 'BEAM',
             'NEW WORLD', 'COAT', 'REWIND', 'NEW GAME +'];
-// Pourcentages du parcours. MEMOIRE arrive tot : sans une seconde trainee,
-// les premiers gouffres durs sont injustes.
+// Course percentages. MEMORY comes early: without a second trail, the
+// first hard chasms are unfair.
 var FP = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 function unl(i){ return S.best >= flags[i].b; }
 
@@ -81,58 +81,58 @@ function genLevel(seed){
   spk    = new Uint8Array(NB);
   prisms = []; crows = [];
 
-  // Curriculum : une seule nouveaute a la fois, calee sur les drapeaux.
-  //     0 a 100 m  rampe d'apprentissage : gouffres etroits, rien d'autre
-  //   100 a 250 m  les gouffres durs, donc le mecanisme de la trainee
-  //   250 m (dr.1) les pics
-  //   500 m (dr.2) les plateformes se raccourcissent, les gouffres s'elargissent
-  //   750 m (dr.3) les corbeaux
+  // Curriculum: one new thing at a time, aligned with the flags.
+  //     0 to 100 m  learning ramp: narrow chasms, nothing else
+  //   100 to 250 m  hard chasms, hence the trail mechanic
+  //   250 m (flag 1) spikes
+  //   500 m (flag 2) platforms get shorter, chasms get wider
+  //   750 m (flag 3) crows
   var F1 = GOAL * FP[0] / 100, F2 = GOAL * FP[1] / 100, F3 = GOAL * FP[2] / 100;
 
-  for(; i < 30; i++) ground[i] = gy;                    // piste d'elan sure
+  for(; i < 30; i++) ground[i] = gy;                    // safe run-up strip
 
   while(i < NB - 16){
-    var prog = i / NB;                                  // 0 -> 1, difficulte croissante
-    // Zone d'apprentissage : une RAMPE, pas un terrain de jeu. Tout converge
-    // vers les valeurs normales au fil des 100 premiers metres. La seule
-    // garantie absolue est l'absence de gouffre dur, qui serait infranchissable
-    // sans trainee, donc injuste avant d'avoir compris le mecanisme.
+    var prog = i / NB;                                  // 0 -> 1, rising difficulty
+    // Learning zone: a RAMP, not a playground. Everything converges to the
+    // normal values over the first 100 metres. The only absolute guarantee
+    // is the absence of hard chasms, which would be impassable without a
+    // trail, hence unfair before the mechanic has been understood.
     var easy = i < EASY, ramp = easy ? i / EASY : 1;
-    // spc : 0 avant le drapeau 2, puis 1 a l'arrivee. C'est lui qui raccourcit
-    // les plateformes et elargit les gouffres, donc l'espacement.
-    // Ne PAS l'appeler sp : ce nom sert deja a l'indice du pic, et var etant
-    // de portee fonction les deux se confondraient.
+    // spc: 0 before flag 2, then 1 at the finish. It is what shortens the
+    // platforms and widens the chasms, hence the spacing.
+    // Do NOT call it sp: that name is already the spike index, and since var
+    // is function-scoped the two would collide.
     var spc = i < F2 ? 0 : (i - F2) / (GOAL - F2);
     var len = easy ? 10 + ((1 - ramp) * 8 | 0) + (r() * 10 | 0)
                    : (11 - spc * 4 | 0) + (r() * (11 - spc * 4) | 0), runStart = i;
     for(j = 0; j < len && i < NB - 16; j++, i++) ground[i] = gy;
 
-    // Aucun pic avant le premier drapeau. On teste runStart et non i : i vaut
-    // la FIN de la plateforme, donc un pic pouvait se poser juste avant 250 m.
+    // No spike before the first flag. We test runStart and not i: i is the
+    // END of the platform, so a spike could land just before 250 m.
     if(runStart > F1 && len > 9 &&
-       r() < Math.min(0.45, 0.06 + (i - F1) / GOAL)){       // jamais colles a l'arrivee
+       r() < Math.min(0.45, 0.06 + (i - F1) / GOAL)){       // never crammed against the finish
       var sp = runStart + 4 + (r() * (len - 6) | 0);
       if(sp < NB) spk[sp] = 1;
       if(r() < 0.3 && sp + 1 < NB) spk[sp + 1] = 1;
     }
 
-    var hard = !easy && r() < 0.12 + prog * 0.5;        // gouffre "impossible"
-    // On decide la hauteur d'arrivee AVANT de creuser, pour garantir que le
-    // gouffre reste franchissable : un saut monte de 73 px seulement, donc un
-    // rebord plus haut impose un gouffre court, et un gouffre dur atterrit
-    // toujours plus bas (il se franchit par la trainee, pas par la detente).
+    var hard = !easy && r() < 0.12 + prog * 0.5;        // "impossible" chasm
+    // The landing height is decided BEFORE digging, to guarantee the chasm
+    // stays crossable: a jump only rises 73 px, so a higher ledge forces a
+    // short chasm, and a hard chasm always lands lower (it is crossed by
+    // the trail, not by the jump).
     var dy = (r() < 0.5 ? -1 : 1) *
              (easy ? 8 + (r() * (12 + ramp * 32) | 0) : 12 + (r() * 52 | 0));
     if(hard && dy < 0) dy = -dy;
     var ngy = Math.max(230, Math.min(470, gy + dy));
     var gap = hard ? 25 + (r() * 13 | 0)
-            : easy ? 6 + (r() * (3 + ramp * 9) | 0)         // 6 a 8 au depart, 6 a 17 en fin de rampe
-                   : 7 + (r() * (9 + spc * 5) | 0);         // 7 a 15, puis jusqu'a 7 a 20
+            : easy ? 6 + (r() * (3 + ramp * 9) | 0)         // 6 to 8 at the start, 6 to 17 at the end of the ramp
+                   : 7 + (r() * (9 + spc * 5) | 0);         // 7 to 15, then up to 7 to 20
     if(!hard && ngy < gy) gap = Math.min(gap, 12);
     var gapStart = i;
     for(j = 0; j < gap && i < NB - 16; j++, i++) ground[i] = -1;
 
-    if(!hard && r() < 0.42){                            // ilot flottant
+    if(!hard && r() < 0.42){                            // floating islet
       var pl = gy - 55 - (r() * 70 | 0), pw = 3 + (r() * 4 | 0);
       var st = gapStart + (gap / 2 | 0) - 1;
       for(j = 0; j < pw; j++) if(st + j < NB) plats[st + j] = pl;
@@ -140,7 +140,7 @@ function genLevel(seed){
 
     gy = ngy;
 
-    // Corbeaux a partir du troisieme drapeau, d'abord clairsemes.
+    // Crows from the third flag on, sparse at first.
     if(i > F3 && r() < 0.25 + (i - F3) / GOAL * 0.9){
       crows.push({ b:i + (r() * 30 | 0), y:gy - 55 - r() * 130, ph:r() * 6.283, k:0 });
       if(r() < prog * 0.6)
@@ -148,19 +148,19 @@ function genLevel(seed){
     }
 
     prisms.push(r() < 0.55
-      ? { b: gapStart + (gap / 2 | 0), y: gy - 45 - (r() * 95 | 0), t: 0 }   // en l'air, au-dessus du vide
+      ? { b: gapStart + (gap / 2 | 0), y: gy - 45 - (r() * 95 | 0), t: 0 }   // in the air, above the void
       : { b: i + 2,                    y: gy - 32,                  t: 0 });
   }
   for(; i < NB; i++) ground[i] = gy;
 
-  // Drapeaux cales sur un sol solide : jamais plantes au-dessus d'un gouffre.
+  // Flags snapped to solid ground: never planted above a chasm.
   flags = [];
   for(j = 0; j < 10; j++){
     var fb = Math.round(GOAL * FP[j] / 100);
     while(fb < NB - 2 && ground[fb] < 0) fb++;
     flags.push({ b:fb, y:ground[fb] });
   }
-  // New Game + : une plateforme flottante sur deux disparait.
+  // New Game +: every other floating platform disappears.
   if(S.ngp){ var n = 0;
     for(i = 0; i < NB; i++) if(plats[i] >= 0){
       var e = i; while(e < NB && plats[e] >= 0) e++;
@@ -174,7 +174,48 @@ function genLevel(seed){
 genLevel(S.seed);
 if(!sget('hb')) saveMeta();
 
-// ---------- Trainees ----------------------------------------------------
+// ---------- Wavedash (API injected by the platform) ---------------------
+var WD = window.Wavedash, wdReady = false, wdLoading = false,
+    wdFlushing = false, wdPending = new Set(), wdDone = new Set();
+var WD_IDS = 'MEMORY,DOUBLE_JUMP,GLIDE,SHIELD,DASH,BEAM,NEW_WORLD,COAT,REWIND,NEW_GAME_PLUS'.split(',');
+async function wdCall(method, ...args){
+  try{ if(WD) return await WD[method](...args); }catch(e){}
+}
+async function wdFlush(){
+  if(!wdReady || wdFlushing) return;
+  wdFlushing = true;
+  for(var id of wdPending){
+    wdPending.delete(id);
+    if(await wdCall('getAchievement', id) === true ||
+       await wdCall('setAchievement', id, true) === true) wdDone.add(id);
+    else { wdPending.add(id); break; }
+  }
+  wdFlushing = false;
+}
+function wdAward(i){
+  if(WD && !wdDone.has(WD_IDS[i])) wdPending.add(WD_IDS[i]);
+  wdFlush();
+}
+async function wdSync(){
+  if(!WD) return;
+  for(var i = 0; i < 10; i++) if(unl(i)) wdAward(i);
+  if(!wdReady && !wdLoading){
+    wdLoading = true;
+    var r = await wdCall('requestStats');
+    wdReady = !!(r && r.success && r.data === true);
+    wdLoading = false;
+  }
+  wdFlush();
+}
+async function wdScore(score){
+  var r = await wdCall('getOrCreateLeaderboard', 'best-distance-v1', 1, 0);
+  if(r && r.success && r.data && r.data.id)
+    await wdCall('uploadLeaderboardScore', r.data.id, Math.round(score), true);
+}
+wdCall('init');
+wdSync();
+
+// ---------- Trails ------------------------------------------------------
 var cur = null, ghosts = [];
 (function(){ var raw = sget('hbG');
   if(raw){ try{ ghosts = JSON.parse(raw) || []; }catch(e){ ghosts = []; } } })();
@@ -199,7 +240,7 @@ function snd(f, d, type, v){ if(!ensureAudio() || muted) return; try{
   o.stop(AC.currentTime + d);
 }catch(e){} }
 
-// Note programmee dans le futur : sert a jouer un arpege sans setTimeout.
+// Note scheduled in the future: used to play an arpeggio without setTimeout.
 function sndAt(f, d, type, v, wait){ if(!ensureAudio() || muted) return; try{
   var t = AC.currentTime + (wait || 0);
   var o = AC.createOscillator(), g = AC.createGain();
@@ -211,8 +252,8 @@ function sndAt(f, d, type, v, wait){ if(!ensureAudio() || muted) return; try{
   o.stop(t + d + 0.03);
 }catch(e){} }
 
-// BUBBLEGUM POP : I - V - vi - IV, quatre temps marques.
-// T3 vaut 3 sur le sixieme degre, seul accord mineur de la grille.
+// BUBBLEGUM POP: I - V - vi - IV, four strong beats.
+// T3 is 3 on the sixth degree, the only minor chord in the progression.
 var PROG = [0, 7, 9, 5], T3 = [4, 4, 3, 4], MEL = [0, 0, 4, 7, 9, 7, 4, 2];
 function hz(s){ return 261.6 * Math.pow(2, s / 12); }
 function mTone(f, t, dur, type, vol, det){
@@ -223,7 +264,7 @@ function mTone(f, t, dur, type, vol, det){
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.start(t); o.stop(t + dur + 0.05);
 }
-// Bruit filtre : caisse claire large, charleston etroit.
+// Filtered noise: wide snare, narrow hi-hat.
 function mNoise(t, dur, vol, freq, q){
   var s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
   s.buffer = NBUF;
@@ -233,7 +274,7 @@ function mNoise(t, dur, vol, freq, q){
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.start(t); s.stop(t + dur + 0.03);
 }
-// Grosse caisse : sinus dont la hauteur plonge en 90 ms.
+// Kick drum: a sine whose pitch dives in 90 ms.
 function mKick(t){
   var o = AC.createOscillator(), g = AC.createGain();
   o.type = 'sine';
@@ -246,9 +287,9 @@ function mKick(t){
 function musStepFn(i, t){
   var bar = (i / 16 | 0) % 4, r = PROG[bar], b = i % 16, k;
   if(b % 4 === 0){ mKick(t); mTone(hz(r - 24), t, 0.22, 'triangle', 0.19); }
-  if(b === 4 || b === 12) mNoise(t, 0.13, 0.15, 2200, 0.8);        // caisse claire
-  if(b % 2 === 1) mNoise(t, 0.03, 0.045, 9200, 1.5);               // charleston
-  if(b % 4 === 2) for(k = 0; k < 3; k++)                           // accord pique
+  if(b === 4 || b === 12) mNoise(t, 0.13, 0.15, 2200, 0.8);        // snare
+  if(b % 2 === 1) mNoise(t, 0.03, 0.045, 9200, 1.5);               // hi-hat
+  if(b % 4 === 2) for(k = 0; k < 3; k++)                           // stabbed chord
     mTone(hz(r + [0, T3[bar], 7][k]), t, 0.17, 'triangle', 0.075);
   if(b % 2 === 0) mTone(hz(r + MEL[b / 2] + 12), t, 0.24, 'sine', 0.14);
 }
@@ -263,29 +304,29 @@ function startMusic(){ if(musOn || !ensureAudio()) return; musOn = true;
   STEP16 = 60 / 126 / 4; musNext = AC.currentTime + 0.1; musStep = 0;
   setInterval(musTick, 60); }
 
-// Position des corbeaux : fonction du temps de run, donc identique d'un essai
-// a l'autre puisque la vitesse de course est constante.
+// Crow position: a function of run time, hence identical from one attempt
+// to the next since the running speed is constant.
 function crowX(c){ return c.b * BW - (RT * 95 + c.ph * 60) % 470; }
 function crowY(c){ return c.y + Math.sin(RT * 2.6 + c.ph) * 15; }
 
-// ---------- Etat --------------------------------------------------------
-// 'attract' est l'etat de depart a CHAQUE chargement de page, meme avec une
-// partie en cours : le titre et une licorne qui joue toute seule valent mieux
-// qu'un panneau de texte pour la premiere impression.
+// ---------- State -------------------------------------------------------
+// 'attract' is the starting state on EVERY page load, even with a game in
+// progress: the title and a unicorn playing by itself make a better first
+// impression than a panel of text.
 var mode = 'attract';                     // attract | title | play | dead | shop | win
 var P = { x:0, y:0, vy:0, ground:false, jumps:0, dash:0, dashUsed:false, anim:0, sh:0, inv:0, cd:0, gl:0 };
 var RT = 0, beam = 0, rew = [], rewT = 0, rewUsed = 0, pushed = 0, puffT = 0, glT = 0;
 var camX = 0, camY = 0, shake = 0, T = 0, runGain = 0, flash = 0, parts = [], sparkT = 0;
 var pops = [], banner = 0, bannerTxt = '', lastBand = 0, gemPulse = 0, wipeArm = 0;
 var i;
-// Palier tous les MS buckets, valeur croissante avec la distance. En
-// pourcentage du niveau, un palier serait devenu trop rare pour recompenser
-// les premiers runs, qui meurent dans le premier centieme du parcours.
+// A tier every MS buckets, worth more with distance. As a percentage of
+// the level, a tier would have been too rare to reward the first runs,
+// which die within the first hundredth of the course.
 function bandValue(q){ return 1 + Math.min(4, Math.floor(q * 5 * MS / GOAL)); }
 function pop(x, y, t, c, sz){ pops.push({ x:x, y:y, t:t, c:c, s:sz || 18, l:1 }); }
 var conf = [], party = 0, partyX = 0, partyY = 0, confT = 0, boom = 0, boomX = 0, boomY = 0;
-// Delai avant le panneau de mort : sans lui, il recouvrait l'explosion a
-// l'instant meme ou elle partait, et un joueur qui tapote relancait sans voir.
+// Delay before the death panel: without it, the panel covered the explosion
+// the very instant it went off, and a tapping player restarted without seeing.
 var deadT = 0;
 function confetti(n, sx, sy, spread){
   n = Math.min(n, 210 - conf.length);
@@ -298,7 +339,7 @@ function confetti(n, sx, sy, spread){
   });
 }
 
-// k : 0 rond, 1 etoile, 2 bouffee. g : multiplicateur de gravite.
+// k: 0 dot, 1 star, 2 puff. g: gravity multiplier.
 function burst(x, y, n, hue, k, g){
   for(var i = 0; i < n; i++){ var a = Math.random() * 6.283, s = 40 + Math.random() * 160;
     parts.push({ x:x, y:y, vx:Math.cos(a) * s, vy:Math.sin(a) * s - 40,
@@ -309,15 +350,15 @@ function pk(x, y, vx, vy, hue, k, g, life){
   parts.push({ x:x, y:y, vx:vx, vy:vy, l:life, h:hue, k:k, g:g });
 }
 
-// Terrain REEL uniquement. La decision de sauter doit ignorer les trainees :
-// l'arc du run precedent passe au-dessus du rebord, et le bot croirait que le
-// sol continue alors qu'il court droit dans le vide.
+// REAL terrain only. The jump decision must ignore trails: the previous
+// run's arc passes above the ledge, and the bot would believe the ground
+// goes on while it runs straight into the void.
 function solid(b, y){
   return b >= NB
     || (ground[b] >= 0 && ground[b] > y - 30 && ground[b] < y + 90)
     || (plats[b] >= 0 && plats[b] > y - 30 && plats[b] < y + 90);
 }
-// Terrain + trainees : sert a decider du rattrapage en vol.
+// Terrain + trails: used to decide on a mid-air recovery.
 function walk(b, y){
   if(b >= NB) return 1;
   if(ground[b] >= 0 && ground[b] > y - 30 && ground[b] < y + 90) return 1;
@@ -329,17 +370,17 @@ function walk(b, y){
   return 0;
 }
 var dReal = null;
-// Pilote automatique : saute quand le sol manque devant ou qu'un pic approche,
-// et rattrape au double saut si rien n'arrive. Sert a la demo de l'ecran
-// d'accroche, et au pilote de capture du menu DEV.
+// Autopilot: jumps when the ground runs out ahead or a spike approaches,
+// and recovers with a double jump if nothing comes. Used by the attract
+// screen demo, and by the DEV menu capture pilot.
 function botJump(){
   var db = bucket(P.x), k3;
   if(P.ground){
     for(k3 = 1; k3 <= 3; k3++) if(spk[db + k3]){ tapped = 1; break; }
     if(!tapped){
-      if(ground[db] >= 0){                       // sur la terre ferme
+      if(ground[db] >= 0){                       // on solid ground
         for(k3 = 1; k3 <= 2; k3++) if(!solid(db + k3, P.y)){ tapped = 1; break; }
-      } else {                                   // sur une trainee au-dessus du vide
+      } else {                                   // on a trail above the void
         for(k3 = 8; k3 <= 21; k3++)
           if(ground[db + k3] >= 0 && ground[db + k3] > P.y - 80){ tapped = 1; break; }
       }
@@ -351,9 +392,9 @@ function botJump(){
   }
 }
 function demoStart(first){
-  // La demo joue avec ses propres trainees, dans une copie : a chaque chute
-  // elle pose un pont et va plus loin la fois suivante. L'ecran d'accroche
-  // demontre donc le coeur du jeu sans une seule ligne de texte.
+  // The demo plays with its own trails, in a copy: on every fall it lays a
+  // bridge and gets further next time. The attract screen thus demonstrates
+  // the core of the game without a single line of text.
   if(first){ dReal = ghosts; ghosts = ghosts.slice(0, 4); }
   else {
     ghosts.unshift(cur.slice(0, Math.min(NB, (P.x / BW | 0) + 3)));
@@ -362,16 +403,16 @@ function demoStart(first){
   cur = newTrail();
   P.x = 40; P.y = ground[5]; P.vy = 0; P.ground = true; P.jumps = 0;
   P.dash = 0; P.dashUsed = false; P.sh = 0; P.inv = 0; P.cd = 9e9;
-  RT = 0; runGain = 0; lastBand = 9e9;      // la demo ne gagne rien
+  RT = 0; runGain = 0; lastBand = 9e9;      // the demo earns nothing
   pops = []; conf = []; party = 0; banner = 0;
   camX = P.x - W * 0.32; camY = P.y - H * 0.55;
   mode = 'attract';
 }
 function startRun(){
-  if(dReal){ ghosts = dReal; dReal = null; }   // on rend ses vraies trainees au joueur
+  if(dReal){ ghosts = dReal; dReal = null; }   // give the player their real trails back
   cur = newTrail();
-  // Aucune reprise : chaque run repart du premier metre. Ce qui progresse,
-  // ce sont les trainees et les ameliorations, pas la position de depart.
+  // No resuming: every run restarts from the first metre. What progresses
+  // is the trails and the upgrades, not the starting position.
   P.x = 40; P.y = ground[5]; P.vy = 0; P.ground = true;
   P.jumps = 0; P.dash = 0; P.dashUsed = false;
   for(var i = 0; i < prisms.length; i++) prisms[i].t = 0;
@@ -380,24 +421,25 @@ function startRun(){
   P.sh = S.sh; P.inv = 0; P.cd = 20 - S.sht;
   for(i = 0; i < crows.length; i++) crows[i].k = 0;
   camX = P.x - W * 0.32; camY = P.y - H * 0.55;
-  mode = 'play'; startMusic();
+  mode = 'play'; startMusic(); wdSync();
 }
 function endRun(won){
   var reached = P.x / BW | 0;
   pushed = reached > 20;
-  if(pushed){                        // un faux depart ne coute pas une trainee
+  if(pushed){                        // a false start does not cost a trail
     ghosts.unshift(cur.slice(0, Math.min(NB, reached + 3)));
     while(ghosts.length > slots()) ghosts.pop();
   }
   S.p += runGain; S.runs++;
   var d = P.x / BW | 0; if(d > S.best) S.best = d;
   save();
+  wdSync(); wdScore(S.best);
   mode = won ? 'win' : 'dead'; flash = 1; shake = won ? 4 : 9; deadT = 1;
   snd(won ? 520 : 180, won ? 0.5 : 0.45, won ? 'triangle' : 'sine', 0.07);
 }
 
-// Efface la sauvegarde et repart sur un monde inedit. Deux appuis sont
-// necessaires : un seul geste ne doit pas detruire des heures de trainees.
+// Wipes the save and starts over in a brand-new world. Two presses are
+// required: a single gesture must not destroy hours of trails.
 function newWorld(){
   try{ localStorage.removeItem('hb'); localStorage.removeItem('hbG'); }catch(e){}
   MEM = {};
@@ -411,8 +453,8 @@ function newWorld(){
   sndAt(659, 0.3, 'triangle', 0.05, 0.16);
 }
 
-// New Game + : nouveau monde, ameliorations et deblocages conserves, mais
-// une plateforme flottante sur deux disparait.
+// New Game +: new world, upgrades and unlocks kept, but every other
+// floating platform disappears.
 function newGamePlus(){
   S.ngp = (S.ngp || 0) + 1; S.seed = newSeed();
   ghosts = []; cur = null; parts = []; pops = []; banner = 0;
@@ -424,9 +466,9 @@ function newGamePlus(){
 }
 
 //<DEV>
-// ---------- Pilote automatique de capture -------------------------------
-// Enchaine les parties, achete ce qu'il peut, et joue avec tous les pouvoirs
-// possedes. Entierement dans le bloc DEV : retire par --strip-dev.
+// ---------- Capture autopilot -------------------------------------------
+// Chains games, buys what it can, and plays with every power it owns.
+// Entirely inside the DEV block: removed by --strip-dev.
 var AUTO = 0;
 function autoShop(){
   for(var pass = 0; pass < 14; pass++){
@@ -445,21 +487,21 @@ function autoPilot(){
   if(mode === 'attract' || mode === 'title'){ startRun(); return; }
   if(mode === 'dead' || mode === 'win'){
     if(deadT > 0) return;
-    if(mode === 'dead' && canRew()){ doRewind(); return; }   // on prolonge le run
+    if(mode === 'dead' && canRew()){ doRewind(); return; }   // extend the run
     autoShop(); startRun(); return;
   }
   botJump();
   var db = bucket(P.x), k, reach = 0;
   for(k = 1; k < 26; k++) if(ground[db + k] >= 0 && ground[db + k] > P.y - 60){ reach = k; break; }
-  // plane : on freine des qu'on descend au-dessus du vide
+  // glide: brake as soon as we descend above the void
   jumpHeld = !P.ground && P.vy > 140 && ground[db] < 0;
-  // ruee : quand le prochain sol est trop loin pour le double saut seul
+  // dash: when the next ground is too far for the double jump alone
   if(S.dash && !P.dashUsed && !P.ground && P.vy > 0 && (reach > 18 || (!reach && ground[db] < 0)))
     dashTap = 1;
 }
 
-// ---------- Debogage ----------------------------------------------------
-// Mettre DEV a 0 avant de soumettre : le bouton et son panneau disparaissent.
+// ---------- Debugging ---------------------------------------------------
+// Set DEV to 0 before submitting: the button and its panel disappear.
 var DEV = 1, devBack = 'title';
 function devBtn(){ return { x:W - 60, y:H - 50, w:46, h:28 }; }
 function devRow(i){ var w = Math.min(300, W - 56); return { x:W / 2 - w / 2, y:H / 2 - 148 + i * 60, w:w, h:50 }; }
@@ -472,7 +514,7 @@ function devClick(x, y){
       S.sh = 3; S.dash = 1; S.sht = 3; S.rew = 3; save();
       flash = 0.6; snd(900, 0.2, 'triangle', 0.05);
     }
-    if(i === 3){                                   // bascule du pilote
+    if(i === 3){                                   // toggle the pilot
       AUTO = !AUTO;
       snd(AUTO ? 880 : 300, 0.12, 'triangle', 0.05);
       if(AUTO){ mode = devBack === 'dev' ? 'title' : devBack; }
@@ -513,10 +555,10 @@ function drawDevBtn(){
 }
 //</DEV>
 
-// ---------- Entrees : tap/espace = saut, bouton ou Maj = ruee -----------
+// ---------- Input: tap/space = jump, button or Shift = dash -------------
 var jumpHeld = false, tapped = false, dashTap = false;
 function dashBtn(){ return { x:74, y:H - 74, r:46 }; }
-// Bouton boutique : la touche A n'existe pas sur telephone.
+// Shop button: there is no A key on a phone.
 function upBtn(){ var w = 230;
   return { x:W / 2 - w / 2, y:H / 2 + (mode === 'title' ? 112 : (canRew() ? 140 : 84)), w:w, h:44 }; }
 function newBtn(){ var two = unl(9), w = two ? 148 : 190;
@@ -536,7 +578,7 @@ function press(x, y){
   //</DEV>
   if(mode === 'attract'){ startRun(); return; }
   if(mode === 'shop'){ shopClick(x, y); return; }
-  if(deadT > 0) return;                          // l'ecran ne reagit pas pendant l'explosion
+  if(deadT > 0) return;                          // the screen ignores input during the explosion
   if(mode === 'play'){ if(inDash(x, y)){ dashTap = true; return; } }
   else {
     if(mode === 'dead' && canRew() && inRect(rewBtn(), x, y)){ doRewind(); return; }
@@ -576,18 +618,18 @@ C.addEventListener('touchstart', function(e){ e.preventDefault();
 C.addEventListener('touchend', function(e){ e.preventDefault(); jumpHeld = false; }, { passive:false });
 C.addEventListener('touchcancel', function(){ jumpHeld = false; }, { passive:false });
 
-// ---------- Physique ----------------------------------------------------
+// ---------- Physics -----------------------------------------------------
 function bucket(x){ var b = x / BW | 0; return b < 0 ? 0 : (b >= NB ? NB - 1 : b); }
 
-// La collision est EXACTEMENT sur la ligne ou les sabots sont passes, et le
-// ruban est peint juste en dessous : son bord superieur est donc la surface.
-// Toute valeur positive ici rendrait la trainee inatteignable quand on refait
-// le meme saut, puisqu'on repasserait systematiquement sous elle.
+// The collision is EXACTLY on the line the hooves went through, and the
+// ribbon is painted just below: its top edge is therefore the surface.
+// Any positive value here would make the trail unreachable when redoing
+// the same jump, since we would systematically pass under it.
 var TLIFT = 0;
 
-// Hauteur d'une trainee a l'abscisse EXACTE, interpolee entre deux echantillons.
-// Une surface continue au lieu d'un escalier : c'est ce qui rend l'atterrissage
-// precis quand le pont est en pente.
+// Trail height at the EXACT abscissa, interpolated between two samples.
+// A continuous surface instead of a staircase: that is what makes landing
+// precise when the bridge slopes.
 function trailY(t, x){
   var f = x / BW - 0.5, i = Math.floor(f);
   if(i < 0 || i + 1 >= NB) return -1;
@@ -596,8 +638,8 @@ function trailY(t, x){
   return a + (c - a) * (f - i) - TLIFT;
 }
 
-// Surface traversee entre y0 et y1 a l'abscisse x. Traversable par le bas :
-// on n'accroche qu'en descendant.
+// Surface crossed between y0 and y1 at abscissa x. Passable from below:
+// we only catch on the way down.
 function surfaceHit(x, y0, y1){
   var b = bucket(x), best = -1;
   function chk(s){ if(s >= 0 && y0 <= s + 4 && y1 >= s && (best < 0 || s < best)) best = s; }
@@ -605,8 +647,8 @@ function surfaceHit(x, y0, y1){
   for(var i = 0; i < ghosts.length; i++) chk(trailY(ghosts[i], x));
   return best;
 }
-// Surface juste au-dessus des sabots : petites marches, y compris sur un pont
-// qui remonte.
+// Surface just above the hooves: small steps, including on a bridge that
+// climbs back up.
 function surfaceStep(x, y, tol){
   var b = bucket(x), best = -1;
   function chk(s){ if(s >= 0 && s <= y + 1 && s >= y - tol && (best < 0 || s < best)) best = s; }
@@ -614,16 +656,16 @@ function surfaceStep(x, y, tol){
   for(var i = 0; i < ghosts.length; i++) chk(trailY(ghosts[i], x));
   return best;
 }
-// Sol le plus bas (y le plus grand) a moins de 40 buckets : les gouffres font
-// au plus 37 buckets, il y a donc toujours un rebord dans la fenetre.
+// Lowest ground (largest y) within 40 buckets: chasms are at most 37
+// buckets wide, so there is always a ledge in the window.
 function fallRef(b){
   var lo = -1, k, g;
   for(k = Math.max(0, b - 40); k < Math.min(NB, b + 41); k++){ g = ground[k]; if(g > lo) lo = g; }
   return lo < 0 ? 470 : lo;
 }
 function die(){
-  // La licorne se desintegre en confettis. Dans un jeu ou l'on meurt pour
-  // construire le chemin, la mort doit etre une fete, pas une punition.
+  // The unicorn disintegrates into confetti. In a game where you die to
+  // build the path, death must be a party, not a punishment.
   boom = 1.9; boomX = P.x; boomY = P.y - 24;
   confetti(130, P.x, P.y - 24, 34);
   for(var z = 0; z < 26; z++){
@@ -633,10 +675,10 @@ function die(){
   }
   sndAt(1200, 0.12, 'triangle', 0.05, 0);
   sndAt(880, 0.22, 'triangle', 0.04, 0.07);
-  if(mode === 'attract'){ demoStart(); return; }   // la demo boucle, sans ecran de mort
+  if(mode === 'attract'){ demoStart(); return; }   // the demo loops, no death screen
   endRun(false);
 }
-// Le bouclier encaisse les pics et les corbeaux, jamais le vide.
+// The shield absorbs spikes and crows, never the void.
 function hurt(){
   if(P.inv > 0) return;
   if(P.sh > 0){
@@ -647,7 +689,7 @@ function hurt(){
   }
   die();
 }
-// Rembobinage : on annule aussi ce que endRun avait encaisse.
+// Rewind: also undo what endRun had banked.
 function doRewind(){
   var b = rew[0]; if(!b) return;
   if(pushed) ghosts.shift();
@@ -687,11 +729,11 @@ function update(dt){
     q.y -= 34 * dt; }
 
   //<DEV>
-  // Avant les sorties par mode : le pilote doit aussi agir sur l'ecran de mort.
+  // Before the per-mode exits: the pilot must also act on the death screen.
   if(AUTO) autoPilot();
   //</DEV>
 
-  // L'ecran-titre laisse le monde defiler en fond : premiere impression.
+  // The title screen lets the world scroll in the background: first impression.
   if(mode === 'title'){
     camX += 52 * dt; if(camX > NB * BW - W) camX = 0;
     camY += ((360 - H * 0.5) - camY) * Math.min(1, dt * 2);
@@ -699,7 +741,7 @@ function update(dt){
     return;
   }
   if(mode === 'dead' || mode === 'win'){
-    if(deadT > 0){ tapped = false; return; }     // on laisse l'explosion se jouer
+    if(deadT > 0){ tapped = false; return; }     // let the explosion play out
     if(tapped){ tapped = false; startRun(); }
     return;
   }
@@ -708,14 +750,14 @@ function update(dt){
   RT += dt;
   if(P.inv > 0) P.inv -= dt;
 
-  // tampon de rembobinage : un echantillon toutes les 50 ms
+  // rewind buffer: one sample every 50 ms
   if(S.rew > 0 && (rewT -= dt) <= 0){
     rewT = 0.05; rew.push([P.x, P.y, P.vy]);
     while(rew.length > (2 + S.rew) * 20) rew.shift();
   }
 
   if(mode === 'attract') botJump();
-  // saut / double saut
+  // jump / double jump
   if(tapped){
     tapped = false;
     if(P.ground || P.jumps === 0){
@@ -724,7 +766,7 @@ function update(dt){
     } else if((S.dbl || mode === 'attract') && P.jumps === 1){
       P.vy = JUMPV * 0.88; P.jumps = 2;
       snd(880, 0.09, 'triangle', 0.04);
-      // couronne de paillettes qui retombe doucement sous les sabots
+      // crown of glitter falling gently under the hooves
       for(var q = 0; q < 14; q++){
         var qa = q / 14 * 6.283;
         pk(P.x, P.y - 3, Math.cos(qa) * 130, Math.sin(qa) * 75 + 55,
@@ -732,7 +774,7 @@ function update(dt){
       }
     }
   }
-  // ruee
+  // dash
   if(dashTap){ dashTap = false;
     if(S.dash && !P.dashUsed && P.dash <= 0){
       P.dash = 0.19; P.dashUsed = true; P.vy = 0;
@@ -742,7 +784,7 @@ function update(dt){
            -120 - Math.random() * 220, (Math.random() - 0.5) * 120,
            270 + Math.random() * 90, 2, -0.1, 0.45 + Math.random() * 0.5);
     } }
-  // Pendant la ruee, une trainee de bouffees colorees part de l'arriere-train.
+  // During the dash, a trail of coloured puffs streams from the hindquarters.
   if(P.dash > 0){
     P.dash -= dt;
     if((puffT -= dt) <= 0){ puffT = 0.022;
@@ -752,16 +794,16 @@ function update(dt){
     }
   }
 
-  // horizontal : toujours vers l'avant
+  // horizontal: always forward
   var ox = P.x, oy = P.y, wasAir = !P.ground;
   P.x += SPD * (P.dash > 0 ? 2.7 : 1) * dt;
   var b = bucket(P.x);
 
-  // petite marche vers le haut (sol, ilot ou pont qui remonte)
+  // small step up (ground, islet or a bridge that climbs)
   if(P.ground){ var up = surfaceStep(P.x, P.y, 14); if(up >= 0 && up < P.y){ P.y = up; oy = up; } }
 
   if(P.dash <= 0) P.vy += GRAV * dt;
-  P.gl = S.glide && jumpHeld && P.vy > 110 ? 1 : 0;                                            // plane
+  P.gl = S.glide && jumpHeld && P.vy > 110 ? 1 : 0;                                            // glide
   if(P.gl) P.vy = 110;
   if(P.gl && (glT -= dt) <= 0){ glT = 0.055;
     pk(P.x - 12 - Math.random() * 16, P.y - 26 + (Math.random() - 0.5) * 20,
@@ -771,8 +813,8 @@ function update(dt){
   var y1 = P.y + P.vy * dt;
   P.ground = false;
   if(P.vy >= 0){
-    // Balayage : on decoupe le deplacement de la frame pour ne jamais
-    // traverser un pont, meme en pleine ruee (12 px par frame).
+    // Sweep: the frame's movement is sliced so we never pass through a
+    // bridge, even mid-dash (12 px per frame).
     var n = Math.max(1, Math.ceil(Math.max(Math.abs(P.x - ox) / (BW * 0.5), Math.abs(y1 - oy) / 5)));
     for(var k = 1; k <= n; k++){
       var xb = ox + (P.x - ox) * k / n;
@@ -780,27 +822,27 @@ function update(dt){
       var s = surfaceHit(xb, ya, yb);
       if(s >= 0){
         if(wasAir){
-          // Se poser sur une trainee plutot que sur la terre ferme merite sa
-          // propre etincelle, quelle que soit la vitesse : c'est le pouvoir
-          // MEMOIRE qui se voit. wasAir evite d'en semer a chaque frame quand
-          // on court le long du pont.
+          // Landing on a trail rather than on solid ground deserves its own
+          // sparkle, whatever the speed: it is the MEMORY power made visible.
+          // wasAir avoids sowing one every frame while running along the
+          // bridge.
           var bb2 = bucket(xb), onGhost = s !== ground[bb2] && s !== plats[bb2];
           if(onGhost){ burst(xb, s, 9, T * 120, 1, 0.3); snd(700, 0.07, 'sine', 0.03); }
           else if(P.vy > 260){ burst(xb, s, 7, xb * 0.4); snd(240, 0.06, 'sine', 0.03); }
           if(P.vy > 260) shake = Math.min(shake + 1.6, 5);
         }
-        // On ne ramene PAS P.x sur le sous-pas : le balayage sert a trouver la
-        // bonne surface, pas a annuler le deplacement. Le ramener coupait la
-        // vitesse de moitie des qu'on touchait le sol, puisqu'on atterrit alors
-        // des le premier sous-pas.
+        // P.x is NOT pulled back to the sub-step: the sweep is there to find
+        // the right surface, not to cancel the movement. Pulling it back
+        // halved the speed as soon as we touched the ground, since we then
+        // land on the very first sub-step.
         y1 = s; P.vy = 0; P.ground = true; P.jumps = 0; P.dashUsed = false;
         break;
       }
     }
   }
-  // Accroche en descente. Sur une pente, le sol descend plus vite que la
-  // gravite pendant les premieres frames : sans ca on decolle en boucle et
-  // l'animation comme le double saut deviennent incoherents.
+  // Snap on the way down. On a slope, the ground drops faster than gravity
+  // during the first frames: without this we keep taking off, and both the
+  // animation and the double jump become inconsistent.
   if(!P.ground && !wasAir && P.vy >= 0){
     var sd = surfaceHit(P.x, y1, y1 + 9);
     if(sd >= 0){ y1 = sd; P.vy = 0; P.ground = true; P.jumps = 0; P.dashUsed = false; }
@@ -808,10 +850,10 @@ function update(dt){
   P.y = y1;
   b = bucket(P.x);
 
-  // Enregistrement : uniquement EN L'AIR, mais sur TOUS les buckets traverses
-  // pendant la frame, pas seulement le dernier. A 270 px/s un bucket de 8 px
-  // passe en 30 ms : des que la frame depasse ce budget, ou pendant une ruee
-  // a 729 px/s, on en sautait, et le ruban sortait en pointille.
+  // Recording: only IN THE AIR, but on EVERY bucket crossed during the
+  // frame, not just the last one. At 270 px/s an 8 px bucket goes by in
+  // 30 ms: as soon as the frame exceeds that budget, or during a dash at
+  // 729 px/s, some were skipped and the ribbon came out dotted.
   if(!P.ground){
     var r0 = bucket(ox), r1 = bucket(P.x), rk, rf;
     for(rk = r0; rk <= r1; rk++) if(cur[rk] < 0){
@@ -820,20 +862,20 @@ function update(dt){
     }
   }
 
-  // dangers
-  // Le pic ne blesse que dans sa hauteur reelle : sinon il grignotait le
-  // bouclier alors qu'on chutait cent pixels plus bas.
+  // hazards
+  // The spike only hurts within its real height: otherwise it nibbled the
+  // shield while we were falling a hundred pixels below.
   if(spk[b] && ground[b] >= 0 && P.y > ground[b] - 20 && P.y < ground[b] + 12){
     hurt(); if(mode !== 'play') return;
   }
-  // Chute mortelle : 220 px sous le sol le plus bas des environs. Le repere
-  // est le TERRAIN et jamais une trainee : les rubans s'empilent vers le ciel
-  // au fil des runs, et prendre le dernier ruban foule comme reference faisait
-  // mourir en plein vol, avant meme d'atteindre la plateforme.
-  // die() ignore le bouclier, par construction.
+  // Fatal fall: 220 px below the lowest nearby ground. The reference is the
+  // TERRAIN and never a trail: ribbons pile up towards the sky over the
+  // runs, and using the last ribbon walked on as the reference killed you
+  // in mid-flight, before even reaching the platform.
+  // die() ignores the shield, by construction.
   if(P.y > fallRef(b) + 220){ die(); return; }
 
-  // corbeaux
+  // crows
   for(i = 0; i < crows.length; i++){
     var cw = crows[i];
     if(cw.k || Math.abs(cw.b * BW - P.x) > 800) continue;
@@ -843,8 +885,8 @@ function update(dt){
     }
   }
 
-  // Tir : ne se declenche que s'il y a une cible devant, sinon la charge
-  // serait gaspillee alors que le rechargement est tres long.
+  // Shot: only fires if there is a target ahead, otherwise the charge
+  // would be wasted while the reload is very long.
   if(S.sht > 0 && (P.cd -= dt) <= 0){
     for(i = 0; i < crows.length; i++){
       var t1 = crows[i]; if(t1.k) continue;
@@ -865,7 +907,7 @@ function update(dt){
     }
   }
 
-  // prismes
+  // prisms
   for(i = 0; i < prisms.length; i++){ var pr = prisms[i];
     if(!pr.t && Math.abs(P.x - pr.b * BW) < 16 && Math.abs(P.y - 16 - pr.y) < 26){
       pr.t = 1; runGain++; gemPulse = 1; burst(pr.b * BW, pr.y, 12, P.x * 0.5);
@@ -873,8 +915,8 @@ function update(dt){
       snd(900 + runGain * 30, 0.09, 'triangle', 0.05);
     } }
 
-  // paliers de 5 % : la progression seule doit deja payer, sinon un run rate
-  // ne rapporte rien et la boucle s'essouffle.
+  // 5 % tiers: progress alone must already pay, otherwise a failed run
+  // earns nothing and the loop runs out of steam.
   var band = Math.floor(P.x / BW / MS);
   if(band > lastBand){
     var gain = 0;
@@ -889,12 +931,13 @@ function update(dt){
     sndAt(1320, 0.24, 'triangle', 0.045, 0.14);
   }
 
-  // Drapeaux : le record avance en direct, donc le deblocage est immediat.
+  // Flags: the record advances live, so the unlock is immediate.
   var dm = P.x / BW | 0;
   if(mode === 'play' && dm > S.best){
     for(i = 0; i < 10; i++){
       var fb2 = flags[i].b;
       if(S.best < fb2 && dm >= fb2){
+        wdAward(i);
         banner = 1.7; bannerTxt = FLAG[i];
         party = 2.6; partyX = P.x; partyY = P.y - 26; confT = 0;
         confetti(90, P.x, P.y - 40, 70);
@@ -922,11 +965,11 @@ function update(dt){
   camY += ((P.y - H * 0.58) - camY) * Math.min(1, dt * 3.5);
 }
 
-// ---------- Rendu -------------------------------------------------------
-// Regle qui gouverne toute la DA : pastel ne veut pas dire sans contraste.
-// Une encre profonde porte les silhouettes, les aplats restent tendres.
+// ---------- Rendering ---------------------------------------------------
+// Rule governing the whole art direction: pastel does not mean no contrast.
+// A deep ink carries the silhouettes, the flat fills stay soft.
 var INK = '#6a4a7a';
-// Pelages : corps clair, corps sombre, decalage de teinte criniere, corne.
+// Coats: light body, dark body, mane hue offset, horn.
 var SKIN = [
   ['#fffdff', '#ffe6f2',   0, '#ffd274', 'PEARL'],
   ['#eef6ff', '#c9e2ff', 150, '#9fe8ff', 'FROST'],
@@ -937,7 +980,7 @@ var SKIN = [
 function sk(){ return SKIN[S.skin] || SKIN[0]; }
 
 function pastel(h, l, s){ return 'hsl(' + ((h % 360 + 360) % 360) + ',' + (s || 78) + '%,' + (l || 78) + '%)'; }
-// Etoile a quatre branches, utilisee par les paillettes, le bouclier et le titre.
+// Four-pointed star, used by the glitter, the shield and the title.
 function star(x, y, r){
   var q = r * 2.3;
   X.beginPath();
@@ -950,7 +993,7 @@ function rrect(x, y, w, h, r){
   if(X.roundRect) X.roundRect(x, y, w, h, r); else X.rect(x, y, w, h);
 }
 
-// --- Fond : degrade, soleil, grand arc-en-ciel, trois plans de relief ----
+// --- Background: gradient, sun, big rainbow, three layers of hills -------
 function sky(cx, cy){
   var g = X.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0,    '#ffd7ea');
@@ -966,7 +1009,7 @@ function sky(cx, cy){
   sg.addColorStop(1,    'rgba(255,214,205,0)');
   X.fillStyle = sg; X.fillRect(sx - 220, sy - 220, 440, 440);
 
-  // Le theme, mis en decor pour presque rien : sept arcs a faible opacite.
+  // The theme, set as scenery for almost nothing: seven low-opacity arcs.
   var ax = W * 0.4 - cx * 0.05, ay = H * 1.22 - cy * 0.05, ar = H * 1.0;
   for(var i = 0; i < 7; i++){
     X.strokeStyle = 'hsla(' + (i * 46 + 338) + ',85%,70%,.15)';
@@ -991,7 +1034,7 @@ function backdrop(cx, cy){
   ridge(cx, cy, 0.30, H * 0.72, 32, '#a9d9c9', 4.4);
 }
 
-// --- Nuages : un seul chemin par nuage, sinon les arcs se relient ------
+// --- Clouds: a single path per cloud, otherwise the arcs join up --------
 function drawClouds(cx, cy){
   var span = NB * BW;
   for(var i = 0; i < clouds.length; i++){
@@ -1015,9 +1058,9 @@ function blob(x, y, r){
   X.moveTo(x + r * 0.9, y + r * 0.5); X.arc(x + r * 0.2, y + r * 0.5, r * 0.7, 0, 6.283);
 }
 
-// --- Traineees : un ruban lisse, pas un escalier de carres ---------------
-// off decale le ruban SOUS la ligne de collision, pour que son bord superieur
-// soit exactement la surface sur laquelle on court.
+// --- Trails: a smooth ribbon, not a staircase of squares -----------------
+// off shifts the ribbon BELOW the collision line, so that its top edge is
+// exactly the surface we run on.
 function trailPath(t, cx, cy, b0, b1, off){
   var on = false;
   X.beginPath();
@@ -1041,18 +1084,18 @@ function drawTrail(t, cx, cy, b0, b1, alpha, w){
   X.restore();
 }
 
-// --- Terrain : corps degrade, bande d'herbe, touffes, fleurs ------------
-// Bruit deterministe en coordonnees monde : les paillettes et les volutes ne
-// scintillent pas quand la camera avance.
+// --- Terrain: gradient body, grass strip, tufts, flowers ----------------
+// Deterministic noise in world coordinates: the sprinkles and swirls do
+// not flicker when the camera moves.
 var TCX = 0;
 function hsh(n){ return (n * 2654435761 % 1009) / 1009; }
 var SPR = ['#ff9ec7', '#ffd274', '#8ee2ba', '#9fd8ff', '#c9a6ff'];
 
-// Premiere moitie du parcours : biscuit glace, coulures et vermicelles.
+// First half of the course: iced biscuit, drips and sprinkles.
 function frost(x0, x1, gy, a){
-  // W0 et W1 sont les bornes en coordonnees MONDE. Toutes les repetitions
-  // (coulures, vermicelles) sont calees sur une grille monde : elles ne
-  // bougent pas quand l'ecran rogne un bord de la plateforme.
+  // W0 and W1 are the bounds in WORLD coordinates. All the repetitions
+  // (drips, sprinkles) are pinned to a world grid: they do not move when
+  // the screen clips an edge of the platform.
   var w = x1 - x0, W0 = x0 + TCX, W1 = x1 + TCX, wx, q;
   X.globalAlpha = a;
   X.save(); X.beginPath(); X.rect(x0, gy - 60, w, H + 300); X.clip();
@@ -1078,8 +1121,8 @@ function frost(x0, x1, gy, a){
   X.restore();
   X.globalAlpha = 1;
 }
-// Seconde moitie : masse nuageuse, dessous lilas, crete nacree. Meme regle
-// d'ancrage monde pour les arcs.
+// Second half: cloud mass, lilac underside, pearly crest. Same world
+// anchoring rule for the arcs.
 function cldg(x0, x1, gy, a){
   var W0 = x0 + TCX, W1 = x1 + TCX, wx, q;
   X.save(); X.beginPath(); X.rect(x0 - 20, gy - 60, x1 - x0 + 40, H + 300); X.clip();
@@ -1113,7 +1156,7 @@ function drawTerrain(cx, cy, b0, b1){
 
   for(var i = 0; i < runs.length; i++){
     var r = runs[i], x0 = r[0] * BW - cx, x1 = (r[1] + 1) * BW - cx, gy = ground[r[0]] - cy;
-    // Fondu entre les deux terrains autour de la moitie du parcours.
+    // Cross-fade between the two terrains around the middle of the course.
     var m = Math.min(1, Math.max(0, (r[0] / GOAL - 0.45) / 0.1));
     if(m < 1) frost(x0, x1, gy, 1 - m);
     if(m > 0) cldg(x0, x1, gy, m);
@@ -1139,7 +1182,7 @@ function spike(x, gy){
   X.beginPath(); X.moveTo(x + BW / 2, gy - 22); X.lineTo(x + BW / 2 + 2.5, gy - 4); X.lineTo(x + BW / 2 - 1, gy - 4); X.fill();
 }
 
-// --- Prismes : de vraies gemmes, avec halo et facette -------------------
+// --- Prisms: real gems, with halo and facet ------------------------------
 function drawPrisms(cx, cy){
   for(var i = 0; i < prisms.length; i++){
     var p = prisms[i]; if(p.t) continue;
@@ -1161,10 +1204,10 @@ function drawPrisms(cx, cy){
   }
 }
 
-// --- Licorne ------------------------------------------------------------
-// Silhouette en deux passes : d'abord toutes les formes grossies a l'encre,
-// puis les memes remplies en clair. Un seul contour propre, zero couture
-// interne, pour le prix de deux passes de dessin.
+// --- Unicorn ------------------------------------------------------------
+// Two-pass silhouette: first all the shapes, enlarged, in ink, then the
+// same ones filled in light. A single clean outline, zero internal seam,
+// for the price of two drawing passes.
 function bodyPath(){
   X.beginPath();
   X.moveTo(-14, -22);
@@ -1177,26 +1220,26 @@ function bodyPath(){
 function horseShapes(ink){
   X.lineJoin = 'round'; X.lineCap = 'round';
   bodyPath(); X.fill(); if(ink){ X.lineWidth = 5; X.stroke(); }
-  X.lineWidth = ink ? 18 : 13;                                  // encolure
+  X.lineWidth = ink ? 18 : 13;                                  // neck
   X.beginPath(); X.moveTo(6, -26); X.lineTo(17, -42); X.stroke();
-  X.save(); X.translate(22, -45.5); X.rotate(0.55);             // crane
+  X.save(); X.translate(22, -45.5); X.rotate(0.55);             // skull
   X.beginPath(); X.ellipse(0, 0, 9.6, 6.9, 0, 0, 6.283); X.fill();
   if(ink){ X.lineWidth = 5; X.stroke(); }
   X.restore();
-  X.beginPath(); X.arc(29.5, -40.5, 4.4, 0, 6.283); X.fill();   // museau
+  X.beginPath(); X.arc(29.5, -40.5, 4.4, 0, 6.283); X.fill();   // muzzle
   if(ink){ X.lineWidth = 5; X.stroke(); }
   X.beginPath(); X.moveTo(18.5, -50); X.lineTo(20.5, -57.5); X.lineTo(24, -50.5); X.closePath();
-  X.fill(); if(ink){ X.lineWidth = 5; X.stroke(); }             // oreille
+  X.fill(); if(ink){ X.lineWidth = 5; X.stroke(); }             // ear
 }
-// Cycle de galop : appui qui recule, envol en arc.
+// Gallop cycle: stance sliding back, arced flight.
 function foot(ph, gx, stride, lift){
   ph -= Math.floor(ph);
   if(ph < 0.62){ return [gx + stride * (0.5 - ph / 0.62), 0]; }
   var v = (ph - 0.62) / 0.38;
   return [gx + stride * (v - 0.5), -Math.sin(v * Math.PI) * lift];
 }
-// Cinematique inverse a deux segments : la hanche et le sabot sont donnes,
-// le genou se deduit. C'est ce qui separe une patte d'un baton.
+// Two-segment inverse kinematics: hip and hoof are given, the knee is
+// derived. That is what separates a leg from a stick.
 function legIK(hx, hy, fx, fy, len, bend, far){
   var dx = fx - hx, dy = fy - hy, d = Math.min(Math.hypot(dx, dy), len * 1.97);
   var a = Math.atan2(dy, dx), h = Math.sqrt(Math.max(0, len * len - d * d / 4));
@@ -1207,7 +1250,7 @@ function legIK(hx, hy, fx, fy, len, bend, far){
   X.beginPath(); X.moveTo(hx, hy); X.lineTo(kx, ky); X.lineTo(fx, fy); X.stroke();
   X.strokeStyle = far ? sk()[1] : sk()[0]; X.lineWidth = 3.2;
   X.beginPath(); X.moveTo(hx, hy); X.lineTo(kx, ky); X.lineTo(fx, fy); X.stroke();
-  X.strokeStyle = '#f0b45c'; X.lineWidth = 4.2;                 // sabot
+  X.strokeStyle = '#f0b45c'; X.lineWidth = 4.2;                 // hoof
   X.beginPath(); X.moveTo(fx - 1.4, fy - 1.4); X.lineTo(fx + 1.6, fy - 0.6); X.stroke();
 }
 var HIP = [[-8, -20], [-5, -20.5], [8, -22], [10.5, -22.5]];
@@ -1226,8 +1269,8 @@ function drawUnicorn(x, y, vy, onG, anim){
   var wind = 1 + air * 0.7 + Math.min(0.7, Math.abs(vy) / 900);
   X.translate(0, bob);
 
-  // Queue : elle flotte a l'horizontale au lieu de tomber au sol. Deux points
-  // de controle dephases font courir une onde le long de la meche.
+  // Tail: it floats horizontally instead of dropping to the ground. Two
+  // out-of-phase control points run a wave along the strand.
   for(i = 0; i < 8; i++){
     var v = i / 7;
     X.strokeStyle = pastel(i * 33 + T * 85 + sk()[2], 66, 94);
@@ -1239,9 +1282,9 @@ function drawUnicorn(x, y, vy, onG, anim){
     X.stroke();
   }
 
-  // pattes eloignees, puis corps, puis pattes proches
-  // En plane, les quatre pattes s'ecartent en croix : la silhouette dit
-  // toute seule que le pouvoir est actif.
+  // far legs, then body, then near legs
+  // While gliding, the four legs spread out in a cross: the silhouette
+  // alone says the power is active.
   for(i = 1; i < 4; i += 2){
     var f = onG ? foot(anim * 0.5 + PHS[i], HIP[i][0] * 0.55, 14, 8)
                 : P.gl ? [HIP[i][0] * 0.55 + (i > 1 ? 19 : -18), -15 - (i > 1 ? 5 : 0)]
@@ -1261,7 +1304,7 @@ function drawUnicorn(x, y, vy, onG, anim){
     legIK(HIP[i][0], HIP[i][1], f2[0], f2[1], 11, i > 1 ? -1 : 1, 0);
   }
 
-  // corne, avec spirale
+  // horn, with spiral
   X.beginPath(); X.moveTo(20.4, -50.5); X.lineTo(27.5, -64.5); X.lineTo(26.4, -49); X.closePath();
   var hg = X.createLinearGradient(20, -64, 28, -49);
   hg.addColorStop(0, '#fff7d4'); hg.addColorStop(0.55, sk()[3]); hg.addColorStop(1, '#f0a94a');
@@ -1276,9 +1319,9 @@ function drawUnicorn(x, y, vy, onG, anim){
     X.stroke();
   }
 
-  // Criniere : ancree sur la ligne du cou, chaque meche part en arriere ET
-  // vers le haut. Les meches du milieu sont les plus longues, et l'onde est
-  // dephasee entre les deux points de controle pour qu'elle voyage.
+  // Mane: anchored on the neck line, each strand goes backwards AND
+  // upwards. The middle strands are the longest, and the wave is
+  // out of phase between the two control points so that it travels.
   for(i = 0; i < 10; i++){
     var u = i / 9;
     var ax = 20 - u * 15.5, ay = -51.5 + u * 18;
@@ -1294,7 +1337,7 @@ function drawUnicorn(x, y, vy, onG, anim){
     X.stroke();
   }
 
-  // regard
+  // eye
   X.fillStyle = 'rgba(255,150,190,.4)';
   X.beginPath(); X.arc(26.5, -42.5, 3.1, 0, 6.283); X.fill();
   X.fillStyle = INK;
@@ -1303,7 +1346,7 @@ function drawUnicorn(x, y, vy, onG, anim){
   X.fillStyle = '#fff';
   X.beginPath(); X.arc(24.4, -47.5, 1, 0, 6.283); X.fill();
 
-  // eclat de corne
+  // horn glint
   var tw = (Math.sin(T * 3.4) + 1) * 0.5;
   X.globalAlpha = 0.3 + tw * 0.7; X.fillStyle = '#fff';
   X.beginPath(); X.arc(27.5, -64.5, 1.4 + tw * 1.8, 0, 6.283); X.fill();
@@ -1342,7 +1385,7 @@ function drawBeam(cx, cy){
   X.fillRect(bx, by - 3, W, 5);
   X.restore(); X.globalAlpha = 1;
 }
-// Ondes concentriques ancrees a l'endroit exact du deblocage.
+// Concentric ripples anchored at the exact spot of the unlock.
 function rings(x, y, age, mul){
   var k, w;
   X.save(); X.lineCap = 'butt'; X.lineWidth = 10;
@@ -1382,20 +1425,20 @@ function drawShield(cx, cy){
   rg.addColorStop(1, 'rgba(255,255,255,0)');
   X.fillStyle = rg; X.fillRect(x - 44, y - 44, 88, 88);
   X.globalAlpha = a0; X.lineWidth = 3.8; X.lineCap = 'round';
-  for(i = 0; i < P.sh * 3; i++){                 // trois arcs par charge
+  for(i = 0; i < P.sh * 3; i++){                 // three arcs per charge
     X.strokeStyle = pastel(i * 38 + T * 140, 64, 96);
     var a = T * (2.3 + (i % 3) * 0.55) + i * 2.1;
     X.beginPath(); X.arc(x, y, 27 + (i % 3) * 5.5, a, a + 1.45); X.stroke();
   }
   X.fillStyle = '#fff';
-  for(i = 0; i < P.sh; i++){                     // etincelles en orbite inverse
+  for(i = 0; i < P.sh; i++){                     // sparks in reverse orbit
     var a2 = -T * 2.1 + i * 2.1;
     star(x + Math.cos(a2) * 35, y + Math.sin(a2) * 35, 1.4 + Math.sin(T * 6 + i) * 0.8);
   }
   X.restore(); X.globalAlpha = 1;
 }
 
-// --- Panneaux et typographie -------------------------------------------
+// --- Panels and typography ---------------------------------------------
 function panel(x, y, w, h, r){
   r = r || 26;
   X.save();
@@ -1414,10 +1457,10 @@ function txt(s, x, y, size, col, align, weight){
   X.font = (weight || '700') + ' ' + size + 'px system-ui,-apple-system,Segoe UI,sans-serif';
   X.fillText(s, x, y);
 }
-// Titre bulle. Pas de fonte externe possible dans 13 ko, donc on fabrique
-// des lettres rondes a partir de la fonte systeme : gros contour a jointures
-// rondes pour epaissir, extrusion pour le relief, degrade a l'interieur et
-// reflet peint uniquement sur le haut du glyphe.
+// Bubble title. No external font fits in 13 kB, so round letters are
+// made from the system font: thick outline with round joins to fatten,
+// extrusion for depth, a gradient inside and a highlight painted only
+// on the top of the glyph.
 function bubbleTitle(str, x, y, size){
   X.save();
   X.font = '900 ' + size + 'px system-ui,-apple-system,Segoe UI,sans-serif';
@@ -1432,7 +1475,7 @@ function bubbleTitle(str, x, y, size){
     X.save();
     X.translate(cx2, y + Math.sin(T * 2.1 + i * 0.55) * size * 0.06);
     X.rotate(Math.sin(T * 1.5 + i * 0.7) * 0.055);
-    for(d = 7; d > 0; d--){                                  // relief
+    for(d = 7; d > 0; d--){                                  // depth
       X.fillStyle = 'rgba(120,72,140,.09)';
       X.fillText(ch, 0, d * size * 0.032);
     }
@@ -1447,10 +1490,10 @@ function bubbleTitle(str, x, y, size){
     var gl = X.createLinearGradient(0, -size * 0.76, 0, -size * 0.2);
     gl.addColorStop(0, 'rgba(255,255,255,.9)');
     gl.addColorStop(1, 'rgba(255,255,255,0)');
-    X.fillStyle = gl; X.fillText(ch, 0, 0);                  // reflet
+    X.fillStyle = gl; X.fillText(ch, 0, 0);                  // highlight
     X.restore();
   }
-  // etincelles autour du titre
+  // sparks around the title
   for(i = 0; i < 5; i++){
     var a = T * 0.7 + i * 1.257, tw = (Math.sin(T * 3 + i * 2) + 1) * 0.5;
     X.globalAlpha = 0.25 + tw * 0.75; X.fillStyle = '#fff';
@@ -1472,9 +1515,9 @@ function rainbowTitle(s, x, y, size){
   }
   X.restore(); X.textAlign = 'center';
 }
-// 0 : aucune famille ouverte, 1 : ouvert mais rien d'achetable, 2 : achat possible.
-// L'ancien compteur tenait aussi compte des familles encore verrouillees, donc
-// il annonçait des achats impossibles.
+// 0: no family open, 1: open but nothing affordable, 2: purchase possible.
+// The old counter also took still-locked families into account, so it
+// announced impossible purchases.
 function shopState(){
   var st = unl(7) ? 1 : 0, i, u;
   for(i = 0; i < UP.length; i++){
@@ -1486,7 +1529,7 @@ function shopState(){
 function shopButton(){
   var r = upBtn(), st = shopState(), i;
   X.save();
-  if(st === 2){                                   // liseré arc-en-ciel qui respire
+  if(st === 2){                                   // breathing rainbow border
     var g = X.createLinearGradient(r.x, 0, r.x + r.w, 0);
     for(i = 0; i <= 6; i++) g.addColorStop(i / 6, pastel(i * 52 + T * 30, 66, 92));
     X.fillStyle = g;
@@ -1496,7 +1539,7 @@ function shopButton(){
   X.globalAlpha = st ? 0.88 : 0.5;
   X.fillStyle = '#fff'; rrect(r.x + ins, r.y + ins, r.w - ins * 2, r.h - ins * 2, 19); X.fill();
   X.globalAlpha = 1;
-  if(st === 2){                                   // reflet qui balaie la surface
+  if(st === 2){                                   // highlight sweeping across the surface
     var sw = (T * 0.5 % 1) * (r.w + 70) - 35;
     var gl = X.createLinearGradient(r.x + sw - 28, 0, r.x + sw + 28, 0);
     gl.addColorStop(0, 'rgba(255,255,255,0)');
@@ -1537,8 +1580,8 @@ function pill(x, y, w, h){
   X.fillStyle = 'rgba(255,255,255,.72)'; rrect(x, y, w, h, h / 2); X.fill();
 }
 
-// Bornes visibles dans le decor : on voit le prochain palier arriver, donc
-// on sait ce qu'on gagne a pousser encore un peu.
+// Markers visible in the scenery: you see the next tier coming, so you
+// know what you gain by pushing a little further.
 function drawMilestones(cx, cy, b0, b1){
   for(var mb = Math.ceil(b0 / MS) * MS; mb <= b1; mb += MS){
     if(mb <= 0 || mb > GOAL) continue;
@@ -1557,7 +1600,7 @@ function drawMilestones(cx, cy, b0, b1){
   }
 }
 
-// Les dix drapeaux, avec le nom de la famille qu'ils ouvrent.
+// The ten flags, with the name of the family they unlock.
 function drawFlags(cx, cy){
   for(var i = 0; i < 10; i++){
     var fl = flags[i], x = fl.b * BW - cx;
@@ -1569,8 +1612,8 @@ function drawFlags(cx, cy){
       X.fillStyle = got ? pastel(k * 50 + T * 60, 64, 95) : '#ded2ea';
       X.fillRect(x + 3, gy - 84 + k * 5.2, 28 + Math.sin(T * 5 - k * 0.6) * 5, 5.2);
     }
-    // Tant que le drapeau n'est pas franchi, le nom reste cache : la surprise
-    // vaut mieux qu'une liste de courses.
+    // Until the flag is passed, the name stays hidden: the surprise beats
+    // a shopping list.
     var lab = got ? FLAG[i] : '? ? ?   ' + fl.b + ' m', lw = got ? 128 : 150;
     X.fillStyle = 'rgba(255,255,255,.88)'; rrect(x - lw / 2, gy - 122, lw, 25, 12); X.fill();
     txt(lab, x, gy - 105, 12.5, got ? '#c94f92' : '#8a7299', 'center', '800');
@@ -1589,7 +1632,7 @@ function render(){
   drawMilestones(cx, cy, b0, b1);
   drawTerrain(cx, cy, b0, b1);
 
-  // porte d'arrivee : une arche arc-en-ciel
+  // finish gate: a rainbow arch
   var gx = GOAL * BW - cx, gyy = (ground[GOAL] >= 0 ? ground[GOAL] : 380) - cy;
   if(gx > -220 && gx < W + 220)
     for(i = 0; i < 7; i++){
@@ -1606,10 +1649,10 @@ function render(){
   for(i = 0; i < parts.length; i++){
     var p = parts[i], px2 = p.x - cx, py2 = p.y - cy;
     X.fillStyle = pastel(p.h, 72, 92);
-    if(p.k === 2){                                  // bouffee qui gonfle
+    if(p.k === 2){                                  // swelling puff
       X.globalAlpha = Math.min(1, p.l) * 0.4;
       X.beginPath(); X.arc(px2, py2, 5 + (1 - p.l) * 26, 0, 6.283); X.fill();
-    } else if(p.k === 1){                           // paillette
+    } else if(p.k === 1){                           // glitter
       X.globalAlpha = Math.min(1, p.l * 2.4);
       star(px2, py2, 1.2 + p.l * 3.2);
     } else {
@@ -1626,7 +1669,7 @@ function render(){
   }
   drawConfetti(cx, cy);
 
-  // nombres flottants : le gain doit se voir la ou il est gagne
+  // floating numbers: the gain must be seen where it is earned
   for(i = 0; i < pops.length; i++){
     var q = pops[i], a = Math.min(1, q.l * 1.9), sc = 1.35 - q.l * 0.35;
     X.save(); X.globalAlpha = a;
@@ -1660,7 +1703,7 @@ function render(){
     X.restore(); X.globalAlpha = 1;
   }
 
-  // vignette : de la profondeur pour trois lignes
+  // vignette: depth for three lines of code
   var vg = X.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.32, W / 2, H * 0.45, Math.max(W, H) * 0.78);
   vg.addColorStop(0, 'rgba(96,52,102,0)'); vg.addColorStop(1, 'rgba(96,52,102,.24)');
   X.fillStyle = vg; X.fillRect(0, 0, W, H);
@@ -1725,9 +1768,9 @@ function render(){
   //</DEV>
 }
 
-// ---------- Boutique (progression permanente) ---------------------------
-// f = index du drapeau qui ouvre la famille. Tant qu'il n'est pas franchi,
-// la ligne reste verrouillee et affiche la distance a atteindre.
+// ---------- Shop (permanent progression) --------------------------------
+// f = index of the flag that opens the family. Until it is passed, the
+// row stays locked and shows the distance to reach.
 var UP = [
   { k:'mem',   f:0, n:'MEMORY',      d:'Keep one more trail',               max:3, c:[10, 26, 55] },
   { k:'dbl',   f:1, n:'DOUBLE JUMP', d:'A second jump in mid-air',          max:1, c:[18] },
@@ -1752,7 +1795,7 @@ function shopClick(mx, my){
       } else snd(160, 0.1, 'sine', 0.04);
       return;
     } }
-  if(inRect(shopRow(7), mx, my)){                 // pelage
+  if(inRect(shopRow(7), mx, my)){                 // coat
     if(!unl(7)){ snd(150, 0.12, 'sine', 0.04); return; }
     S.skin = (S.skin + 1) % SKIN.length; saveMeta();
     snd(760, 0.12, 'triangle', 0.05); flash = 0.3;
@@ -1795,7 +1838,7 @@ function drawShop(){
   txt('BACK', W / 2, b.y + 29, 17, '#8a6f96');
 }
 
-// ---------- Boucle ------------------------------------------------------
+// ---------- Loop --------------------------------------------------------
 demoStart(1);
 var last = 0;
 function loop(t){

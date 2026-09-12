@@ -1,7 +1,7 @@
-// Le ruban ne doit jamais sortir en pointille. Un "trou" = 1 a 3 buckets vides
-// entre deux buckets remplis. Les vrais vides (atterrissage) font des dizaines
-// de buckets. On joue SANS trainee fantome : sinon courir sur un ancien ruban
-// cree une interruption legitime, puisqu'on n'enregistre qu'en vol.
+// The trail must never come out dotted. A "hole" = 1 to 3 empty buckets
+// between two filled buckets. Real gaps (landing) span dozens of buckets.
+// We play WITHOUT a ghost trail: otherwise running over an old trail
+// creates a legitimate break, since we only record while airborne.
 var fs=require('fs'), vm=require('vm');
 var PROPS={}; 'fillStyle strokeStyle lineWidth lineCap lineJoin font textAlign textBaseline globalAlpha shadowColor shadowBlur shadowOffsetY letterSpacing'.split(' ').forEach(p=>PROPS[p]=1);
 var gr={addColorStop:()=>{}};
@@ -20,11 +20,11 @@ function boot(seed, extra){
   var js=/<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(process.argv[2]||'index.html','utf8'))[1];
   var C=vm.createContext(SB); vm.runInContext(js,C); return c=>vm.runInContext(c,C);
 }
-var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' ECHEC')+'  '+n); }
+var ok=[]; function t(n,v){ ok.push(v); console.log((v?'  OK  ':' FAIL ')+'  '+n); }
 
-// Invariant precis : si la licorne est EN L'AIR du debut a la fin d'une frame,
-// alors tous les buckets qu'elle a traverses pendant cette frame doivent avoir
-// un echantillon. Les interruptions au sol restent legitimes.
+// Precise invariant: if the unicorn is IN THE AIR from the start to the end of a frame,
+// then every bucket it crossed during that frame must have a sample.
+// Breaks on the ground remain legitimate.
 function run(dt, dash){
   var R=boot(1306, dash?{dash:1,best:99999}:{});
   var holes=0, checked=0;
@@ -36,17 +36,17 @@ function run(dt, dash){
       var b0=R('bucket(P.x)'), g0=R('P.ground');
       R('update('+dt+')');
       var b1=R('bucket(P.x)'), g1=R('P.ground');
-      if(g0 || g1) continue;                       // contact au sol : pas d'enregistrement
+      if(g0 || g1) continue;                       // ground contact: no recording
       var cur=R('cur');
       for(var b=b0; b<=b1; b++){ checked++; if(cur[b] < 0) holes++; }
     }
   }
   return [holes, checked];
 }
-[['60 fps', 1/60, false], ['60 fps + ruee', 1/60, true], ['30 fps', 1/30, false],
- ['22 fps, dt plafonne', 0.045, false], ['22 fps + ruee', 0.045, true]].forEach(function(c){
+[['60 fps', 1/60, false], ['60 fps + dash', 1/60, true], ['30 fps', 1/30, false],
+ ['22 fps, dt capped', 0.045, false], ['22 fps + dash', 0.045, true]].forEach(function(c){
   var r = run(c[1], c[2]);
-  t(c[0].padEnd(20) + ' aucun trou (' + r[1] + ' echantillons)', r[0] === 0);
+  t(c[0].padEnd(20) + ' no holes (' + r[1] + ' samples)', r[0] === 0);
 });
-console.log(ok.every(Boolean)?'\nRUBAN CONTINU':'\nDES TESTS ECHOUENT');
+console.log(ok.every(Boolean)?'\nTRAIL CONTINUOUS':'\nSOME TESTS FAIL');
 process.exit(ok.every(Boolean)?0:1);

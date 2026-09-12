@@ -1,4 +1,4 @@
-// Chaque graine doit produire un monde jouable, pas seulement la 1306.
+// Every seed must produce a playable world, not just 1306.
 var fs=require('fs'), vm=require('vm');
 var src=fs.readFileSync(process.argv[2]||'index.html','utf8');
 var gen=/function genLevel\(seed\)\{[\s\S]*?\n\}/.exec(src)[0]
@@ -23,9 +23,9 @@ for(var t=0;t<40;t++){
   var ground=vm.runInContext('ground',C), plats=vm.runInContext('plats',C);
   var prisms=vm.runInContext('prisms',C), flags=vm.runInContext('flags',C), crows=vm.runInContext('crows',C);
   var spk=vm.runInContext('spk',C);
-  // 1. depart sur du sol plat
+  // 1. start on flat ground
   var startOk=true; for(var i=0;i<28;i++) if(ground[i]<0) startOk=false;
-  // 2. aucun rebord hors de portee (saut = 73 px de montee, 21 buckets)
+  // 2. no ledge out of reach (jump = 73 px of rise, 21 buckets)
   var unfair=0, NBv=7600, k=0;
   while(k<NBv){
     if(ground[k]<0){ var st=k; while(k<NBv&&ground[k]<0) k++;
@@ -34,31 +34,31 @@ for(var t=0;t<40;t++){
       if(w<=21 && !isl && to<from-73) unfair++;
     } else k++;
   }
-  // 3. tous les gouffres durs sont bien infranchissables d'un saut
+  // 3. every hard gap really is impossible to clear in one jump
   var hardOk=hard.every(h=>h[1]>21);
-  if(!startOk||unfair||!hardOk){ bad++; console.log('  PROBLEME graine',seed,{startOk:startOk,unfair:unfair,hardOk:hardOk}); }
-  // La zone d apprentissage doit rester franchissable par un debutant.
-  // Curriculum : chaque mecanique attend son drapeau.
+  if(!startOk||unfair||!hardOk){ bad++; console.log('  FAIL seed',seed,{startOk:startOk,unfair:unfair,hardOk:hardOk}); }
+  // The learning zone must remain clearable by a beginner.
+  // Curriculum: each mechanic waits for its flag.
   var F1=250, F3=750, spikesBefore=0, crowsBefore=0, easyMaxGap=0, worstGap=0, k2=0;
   for(var q2=0;q2<F1;q2++) if(spk[q2]) spikesBefore++;
   crowsBefore = crows.filter(function(c){ return c.b < F3; }).length;
   while(k2<2508){ if(ground[k2]<0){ var st2=k2; while(k2<2508&&ground[k2]<0) k2++;
       var wq=k2-st2; if(wq>worstGap) worstGap=wq; if(st2<100&&wq>easyMaxGap) easyMaxGap=wq; } else k2++; }
   if(spikesBefore || crowsBefore || easyMaxGap>18 || worstGap>37){
-    bad++; console.log('  PROBLEME graine',seed,
-      {picsAvant250m:spikesBefore, corbeauxAvant750m:crowsBefore, gouffreAvant100m:easyMaxGap, gouffreMax:worstGap}); }
+    bad++; console.log('  FAIL seed',seed,
+      {spikesBefore250m:spikesBefore, crowsBefore750m:crowsBefore, gapBefore100m:easyMaxGap, maxGap:worstGap}); }
   var flagOk = flags.length===10 && flags.every(function(f){return ground[f.b]>=0;});
   var crowOk = crows.every(function(c){return c.b>750;});
-  if(!flagOk||!crowOk){ bad++; console.log('  PROBLEME graine',seed,{flagOk:flagOk,crowOk:crowOk}); }
+  if(!flagOk||!crowOk){ bad++; console.log('  FAIL seed',seed,{flagOk:flagOk,crowOk:crowOk}); }
   stats.push([hard.length,prisms.length,crows.length]);
 }
 var hs=stats.map(s=>s[0]), ps=stats.map(s=>s[1]);
-console.log('40 graines aleatoires testees, mondes defectueux :',bad);
-console.log('gouffres durs  min',Math.min.apply(0,hs),' max',Math.max.apply(0,hs),' moyenne',(hs.reduce((a,b)=>a+b)/40|0));
-console.log('prismes        min',Math.min.apply(0,ps),' max',Math.max.apply(0,ps));
+console.log('40 random seeds tested, defective worlds:',bad);
+console.log('hard gaps      min',Math.min.apply(0,hs),' max',Math.max.apply(0,hs),' average',(hs.reduce((a,b)=>a+b)/40|0));
+console.log('prisms         min',Math.min.apply(0,ps),' max',Math.max.apply(0,ps));
 var cs=stats.map(function(x){return x[2];});
-console.log('corbeaux       min',Math.min.apply(0,cs),' max',Math.max.apply(0,cs));
-console.log('drapeaux       10 par monde, tous sur du sol solide');
-console.log('curriculum : 0 pic avant 250 m, 0 corbeau avant 750 m,');
-console.log('             gouffre <= 18 avant 100 m, et <= 37 partout (portee du saut = 21)');
+console.log('crows          min',Math.min.apply(0,cs),' max',Math.max.apply(0,cs));
+console.log('flags          10 per world, all on solid ground');
+console.log('curriculum: 0 spikes before 250 m, 0 crows before 750 m,');
+console.log('            gap <= 18 before 100 m, and <= 37 everywhere (jump range = 21)');
 process.exit(bad?1:0);

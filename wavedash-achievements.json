@@ -1,0 +1,65 @@
+{
+  "achievements": [
+    {
+      "identifier": "MEMORY",
+      "display_name": "Memory",
+      "description": "Pass flag 1 to unlock Memory.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "DOUBLE_JUMP",
+      "display_name": "Double Jump",
+      "description": "Pass flag 2 to unlock Double Jump.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "GLIDE",
+      "display_name": "Glide",
+      "description": "Pass flag 3 to unlock Glide.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "SHIELD",
+      "display_name": "Shield",
+      "description": "Pass flag 4 to unlock Shield.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "DASH",
+      "display_name": "Dash",
+      "description": "Pass flag 5 to unlock Dash.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "BEAM",
+      "display_name": "Beam",
+      "description": "Pass flag 6 to unlock Beam.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "NEW_WORLD",
+      "display_name": "New World",
+      "description": "Pass flag 7 to unlock New World.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "COAT",
+      "display_name": "Coat",
+      "description": "Pass flag 8 to unlock Coat.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "REWIND",
+      "display_name": "Rewind",
+      "description": "Pass flag 9 to unlock Rewind.",
+      "stat_requirement": null
+    },
+    {
+      "identifier": "NEW_GAME_PLUS",
+      "display_name": "New Game +",
+      "description": "Pass flag 10 to unlock New Game +.",
+      "stat_requirement": null
+    }
+  ],
+  "stats": []
+}

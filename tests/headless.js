@@ -1,5 +1,5 @@
-// Harnais sans navigateur : contexte canvas factice, on appelle render() dans
-// chaque mode pour attraper les fonctions manquantes et les fautes de frappe.
+// Headless harness: fake canvas context, render() is called in each mode to
+// catch missing functions and typos.
 var fs=require('fs'), vm=require('vm');
 var calls={};
 var PROPS={};
@@ -31,7 +31,7 @@ var src=fs.readFileSync(process.argv[2]||'index.html','utf8');
 var js=/<script>([\s\S]*)<\/script>/.exec(src)[1];
 var ctxv=vm.createContext(sandbox);
 vm.runInContext(js,ctxv,{filename:'game.js'});
-// une frame par mode
+// one frame per mode
 var modes=['title','play','dead','win','shop'];
 vm.runInContext("startRun();",ctxv);
 for(var m of modes){
@@ -39,7 +39,7 @@ for(var m of modes){
   for(var f=0;f<8;f++) vm.runInContext("update(1/60); render();",ctxv);
   console.log('mode',m.padEnd(6),'OK');
 }
-// 30 secondes de jeu reel
+// 30 seconds of real gameplay
 vm.runInContext("startRun(); for(var i=0;i<1800;i++){ if(i%37===0) tapped=true; update(1/60); render(); }",ctxv);
-console.log('1800 frames de jeu   OK');
-console.log('mode final:',vm.runInContext("mode",ctxv),'| bucket:',vm.runInContext("P.x/BW|0",ctxv),'| particules:',vm.runInContext("parts.length",ctxv));
+console.log('1800 gameplay frames   OK');
+console.log('final mode:',vm.runInContext("mode",ctxv),'| bucket:',vm.runInContext("P.x/BW|0",ctxv),'| particles:',vm.runInContext("parts.length",ctxv));

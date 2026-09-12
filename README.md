@@ -1,142 +1,165 @@
 # HOOFBEAT
 
-Entrée [js13kGames 2026](https://js13kgames.com), thème *Unicorns and Rainbows*.
-Un jeu web complet dans une archive zip de 13 Ko, sans aucun fichier externe.
+A [js13kGames 2026](https://js13kgames.com) entry, theme *Unicorns and Rainbows*.
+A complete web game in a 13 KB zip archive, with no external file.
 
-## Le principe
+## The principle
 
-Tu ne peux qu'avancer. Ta traînée arc-en-ciel est enregistrée pendant chaque vol.
-Au run suivant, elle devient **solide**.
+You can only move forward. Your rainbow trail is recorded during each flight.
+On the next run, it becomes **solid**.
 
-Certains gouffres dépassent volontairement la portée d'un saut : ils sont
-mathématiquement infranchissables du premier coup. Il faut sauter dedans, mourir,
-et se servir de l'arc qu'on vient d'y laisser comme d'un pont. **On meurt pour
-construire le chemin.**
+Some gaps are deliberately wider than a jump can reach: they are
+mathematically impossible on the first try. You have to jump in, die, and use
+the arc you just left there as a bridge. **You die to build the path.**
 
 ![Gameplay](media/gameplay.gif)
 
-## Démarrer
+## Run
 
-Ouvre `index.html` dans un navigateur. Aucune installation, aucun serveur.
+Open `index.html` in a browser. No install, no server.
 
-## Contrôles
+## Controls
 
-| touche | action |
+| key | action |
 |---|---|
-| Espace, Flèche haut, W, Z, clic, toucher | sauter ; maintenir pour planer une fois GLIDE acheté |
-| Shift, X, bouton rond en bas à gauche | ruée, une fois DASH acheté |
-| A | ouvrir la boutique |
-| R | rembobiner après une mort, une fois REWIND acheté |
-| N, deux fois | nouveau monde |
-| M | couper le son |
-| Échap | quitter la boutique |
+| Space, Up arrow, W, Z, click, tap | jump; hold to glide once GLIDE is bought |
+| Shift, X, round button at the bottom left | dash, once DASH is bought |
+| A | open the shop |
+| R | rewind after a death, once REWIND is bought |
+| N, twice | new world |
+| M | mute |
+| Escape | leave the shop |
 
-## Compiler
+## Build
 
 ```bash
-nvm use            # version de Node dans .nvmrc
-npm install        # terser et roadroller, versions figées par package-lock.json
-npm run build      # build rapide, un tirage roadroller
-npm run build:final   # build à soumettre : roadroller -O2, meilleur de trois tirages
+nvm use               # Node version from .nvmrc
+npm install           # terser and roadroller, versions pinned by package-lock.json
+npm run build         # fast build, one roadroller draw
+npm run build:final   # build to submit: roadroller -O2, best of three draws
 ```
 
-Chaîne : extraction du script, `terser`, `roadroller`, `zip -9`, `advzip`
-(zopfli, si `advancecomp` est installé), puis mesure du budget. Livrables :
+Pipeline: script extraction, `terser`, `roadroller`, `zip -9`, `advzip`
+(zopfli, if `advancecomp` is installed), then the budget check. Deliverables:
 
-- `hoofbeat.zip` à la racine, l'archive à soumettre, avec `index.html` à sa racine ;
-- `dist/js13k/index.html`, la même page, pour tester dans un navigateur.
+- `hoofbeat.zip` at the root, the archive to submit, with `index.html` at its root;
+- `dist/js13k/index.html`, the same page, to test in a browser;
+- `dist/wavedash/index.html`, readable and without the DEV panel, for Wavedash.
 
-La taille du zip change d'un build à l'autre : roadroller tire ses paramètres
-au hasard. Lire le chiffre imprimé par le build, pas un chiffre noté ici.
+The zip size changes from one build to the next: roadroller draws its
+parameters at random. Read the number the build prints, not one written here.
 
-`--strip-dev` retire physiquement le panneau de débogage et le pilote
-automatique, délimités par les marqueurs `//<DEV>` et `//</DEV>`. C'est la
-version à soumettre.
+`--strip-dev` physically removes the debug panel and the autopilot, delimited
+by the `//<DEV>` and `//</DEV>` markers. That is the version to submit, and
+both npm scripts above pass the flag.
 
-Sans l'option, le build conserve le panneau : pratique pour tester, trop gros
-pour le concours.
+Without the flag (`npm run build:dev`), the build keeps the panel: handy for
+testing, too big for the contest.
 
-## Tester
+## Test
 
 ```bash
-bash test.sh              # les douze suites sur index.html
-node tests/fx.js          # une suite en particulier
+bash test.sh              # the eleven suites on index.html
+node tests/fx.js          # one suite on its own
 ```
 
-Chaque suite accepte un fichier en argument, ce qui permet de valider une
-variante : `node tests/trail.js autre.html`.
+Each suite accepts a file as argument, which lets you check a variant:
+`node tests/trail.js other.html`.
 
-| suite | ce qu'elle verrouille |
+| suite | what it locks down |
 |---|---|
-| `headless.js` | le jeu tourne 1800 frames dans les cinq modes, sans navigateur |
-| `tunnel.js` | on ne traverse jamais un pont, de 200 à 2600 px/s, ruée comprise |
-| `trail.js` | le ruban n'a aucun trou : en vol, tout bucket traversé est enregistré |
-| `terrain.js` | le décor du sol ne scintille pas quand la caméra avance |
-| `ladder.js` | l'échelle des dix drapeaux, bouclier, tir, rembobinage, New Game + |
-| `fx.js` | un effet par pouvoir, et seulement quand il est actif |
-| `party.js` | les noms des pouvoirs verrouillés restent cachés, la fête se déclenche |
-| `attract.js` | l'écran d'accroche joue seul et n'écrit rien dans la sauvegarde |
-| `music.js` | la grille de BUBBLEGUM POP, et la survie sans `AudioContext` |
-| `dev.js` | les cinq actions du panneau de débogage |
-| `auto.js` | le pilote enchaîne les parties, achète, et se sert des pouvoirs |
-| `seeds.js` | 40 mondes aléatoires : équité et respect du curriculum |
+| `wavedash.js` | strict SDK contracts, achievements and leaderboard, source and Terser |
+| `headless.js` | the game runs 1800 frames in all five modes, without a browser |
+| `tunnel.js` | you never pass through a bridge, from 200 to 2600 px/s, dash included |
+| `trail.js` | the ribbon has no hole: in flight, every bucket crossed is recorded |
+| `terrain.js` | the ground decor does not flicker as the camera moves forward |
+| `ladder.js` | the ten-flag ladder, shield, beam, rewind, New Game + |
+| `fx.js` | one effect per power, and only while it is active |
+| `party.js` | locked power names stay hidden, the party triggers |
+| `attract.js` | the attract screen plays on its own and writes nothing to the save |
+| `music.js` | the BUBBLEGUM POP grid, and survival without `AudioContext` |
+| `seeds.js` | 40 random worlds: fairness and respect of the curriculum |
 
-Les suites utilisent un contexte `vm` avec un canvas factice. Aucune dépendance,
-aucun navigateur.
+The suites use a `vm` context with a fake canvas. No dependency, no browser.
 
 ## Architecture
 
-Le niveau est un tableau indexé par « bucket » de 8 px. Le coureur n'avance que
-vers la droite, donc **une traînée est une fonction pure de x** : un `y` par
-bucket. Collision en O(1), mémoire minuscule, sérialisation triviale.
+The level is an array indexed by 8 px bucket. The runner only moves right,
+so **a trail is a pure function of x**: one `y` per bucket. O(1) collision,
+tiny memory, trivial serialization.
 
-Portée d'un saut : `2 × 470 / 1500 × 270` = 169 px, soit 21 buckets. La
-génération produit des gouffres de 25 à 37 buckets.
+Jump reach: `2 × 470 / 1500 × 270` = 169 px, or 21 buckets. Generation
+produces gaps of 25 to 37 buckets.
 
-La collision balaie chaque frame en sous-pas et interpole la hauteur entre deux
-échantillons : sans ça on traverse les ponts en ruée ou à faible cadence.
+Collision sweeps each frame in sub-steps and interpolates the height between
+two samples: without that, you go through bridges while dashing or at a low
+frame rate.
 
-La chute mortelle se mesure à 220 px sous le **terrain** local, jamais sous une
-traînée : les rubans s'empilent vers le ciel au fil des runs, et les prendre
-comme référence tuerait en plein vol.
+A fatal fall is measured 220 px below the local **terrain**, never below a
+trail: ribbons stack up toward the sky over the runs, and taking them as the
+reference would kill you in mid-flight.
 
 ## Curriculum
 
-Une seule nouveauté à la fois, calée sur les drapeaux.
+One new thing at a time, keyed to the flags.
 
-| jusqu'à | ce qui apparaît |
+| up to | what appears |
 |---|---|
-| 100 m | rampe d'apprentissage : gouffres étroits, longues plateformes |
-| 250 m | les gouffres durs, donc le mécanisme de la traînée |
-| 250 m, drapeau 1 | les pics |
-| 500 m, drapeau 2 | plateformes plus courtes, gouffres plus larges |
-| 750 m, drapeau 3 | les corbeaux |
+| 100 m | learning ramp: narrow gaps, long platforms |
+| 250 m | the hard gaps, hence the trail mechanic |
+| 250 m, flag 1 | spikes |
+| 500 m, flag 2 | shorter platforms, wider gaps |
+| 750 m, flag 3 | crows |
 
-Les dix drapeaux, tous les 10 % du parcours, ouvrent une famille de pouvoirs :
-mémoire, double saut, plané, bouclier, ruée, tir, changement de monde, pelage,
-rembobinage, New Game +. Leur nom reste caché tant qu'ils ne sont pas franchis.
+The ten flags, one every 10% of the course, each open a power family:
+memory, double jump, glide, shield, dash, beam, new world, coat, rewind,
+New Game +. Their names stay hidden until the flag is passed.
 
-## Sauvegarde
+## Save
 
-`localStorage`, avec un miroir en mémoire pour les environnements qui le
-refusent. La graine du monde est persistée : un même joueur retrouve son
-parcours et ses traînées. Le bouton NEW WORLD tire une graine neuve.
+`localStorage`, with an in-memory mirror for environments that refuse it.
+The world seed is persisted: the same player gets their course and trails
+back. The NEW WORLD button draws a fresh seed.
 
-## Panneau de débogage
+## Debug panel
 
-Le bouton **DEV**, en bas à droite, ouvre cinq actions : effacer la sauvegarde,
-tout débloquer, avancer de 1000 m, activer le pilote automatique, fermer.
+The **DEV** button, at the bottom right, opens five actions: clear the save,
+unlock everything, advance 1000 m, enable the autopilot, close.
 
-Le pilote enchaîne les parties, achète du moins cher au plus cher, se sert du
-plané et de la ruée, et rembobine pour prolonger un run. Il sert aux captures.
+The autopilot chains runs, buys from cheapest to most expensive, uses glide
+and dash, and rewinds to extend a run. It exists for captures.
 
-## Outils
+Both live in the source between `//<DEV>` and `//</DEV>`; `--strip-dev`
+removes them from the build.
 
-- `tools/music.html` : les huit musiques auditionnées avant de choisir
-  BUBBLEGUM POP. Tout est synthétisé, aucun fichier audio.
-- `tools/ground.html` : les six sols comparés côte à côte, avec la même découpe
-  de terrain et une licorne pour l'échelle.
+## Wavedash
 
-## Licence
+The platform injects `window.Wavedash`; no SDK or external resource is bundled.
+The game initializes it, waits for statistics, and awards one achievement per
+flag. Existing local unlocks are synchronized on load. Failed achievement calls
+stay queued for the next run; the attract demo earns nothing.
 
-À choisir avant publication. js13kGames demande que le code source soit public.
+Import `wavedash-achievements.json` manually in the Developer Portal before
+playtesting. The ten identifiers match the ten flags. The `best-distance-v1`
+leaderboard is created on the first completed run: numeric metres, descending,
+keeping each player's highest score. Both deaths and victories submit the
+saved distance record; resetting the local world does not erase the online best.
+
+`wavedash.toml` targets `dist/wavedash`. Build first, then use `wavedash dev`
+for a signed-in playtest. Local strict SDK tests cover all ten flag crossings,
+restore, delayed stats, duplicate awards, failed calls and score submission,
+including production Terser options. They do not prove server persistence.
+
+`media/gameplay-wavedash.mp4` contains the first ten seconds of a fresh game,
+in 1280×720 H.264 at 30 fps, without audio. Regenerate with the js13k-finalize
+skill's `record-gif.py` from the repository root:
+
+```bash
+python3 /path/to/js13k-finalize/scripts/record-gif.py --video --secs 10 --fps 30 \
+  --seed 1306 --start-js 'DEV=0; startRun()' --driver tools/capture-gameplay.js \
+  --keep-frames --out media/gameplay-wavedash.mp4
+```
+
+## License
+
+Not chosen yet. js13kGames requires the source to be public.

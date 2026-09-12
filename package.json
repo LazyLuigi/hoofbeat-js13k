@@ -1,7 +1,7 @@
 {
   "name": "hoofbeat",
   "version": "1.0.0",
-  "description": "Entree js13kGames 2026. Ta trainee arc-en-ciel devient solide au run suivant : tu meurs pour construire le chemin.",
+  "description": "js13kGames 2026 entry. Your rainbow trail turns solid on the next run: you die to build the path.",
   "private": true,
   "scripts": {
     "build": "bash build.sh index.html --strip-dev",

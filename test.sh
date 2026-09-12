@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# test.sh - lance les douze suites sur une source donnee (index.html par defaut)
+# test.sh - runs the eleven suites on a given source (index.html by default)
 SRC="${1:-index.html}"
 fail=0
-for f in headless tunnel trail terrain ladder fx party attract music dev auto seeds; do
+for f in attract fx headless ladder music party seeds terrain trail tunnel wavedash; do
   out="$(node "tests/$f.js" "$SRC" 2>&1)"
+  status=$?
   last="$(printf '%s' "$out" | tail -1)"
-  if printf '%s' "$out" | grep -q "ECHEC\|Error"; then
-    printf '  ECHEC   %-9s %s\n' "$f" "$last"; fail=1
-    printf '%s\n' "$out" | grep "ECHEC" | sed 's/^/            /'
+  if [ "$status" -ne 0 ] || printf '%s' "$out" | grep -q "FAIL\|Error"; then
+    printf '  FAIL    %-9s %s\n' "$f" "$last"; fail=1
+    printf '%s\n' "$out" | grep "FAIL" | sed 's/^/            /'
   else
     printf '  ok      %-9s %s\n' "$f" "$last"
   fi
 done
-[ $fail -eq 0 ] && echo "" && echo "Toutes les suites passent." || { echo ""; echo "Des suites echouent."; exit 1; }
+[ $fail -eq 0 ] && echo "" && echo "All suites pass." || { echo ""; echo "Some suites fail."; exit 1; }
